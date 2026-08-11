@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="55%" stop-color="#13204a"/>
+      <stop offset="100%" stop-color="#0f2557"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#3b82f6" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3b82f6" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="980" cy="120" r="420" fill="url(#glow)"/>
+
+  <!-- Logo mark -->
+  <g transform="translate(120, 196) scale(0.453)">
+    <rect width="512" height="512" rx="116" fill="url(#brand)"/>
+    <path d="M104 348 L200 252 L280 332 L400 188"
+          fill="none" stroke="#ffffff" stroke-width="42"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M326 188 L400 188 L400 262"
+          fill="none" stroke="#ffffff" stroke-width="42"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="380" y="298" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="80" font-weight="700" fill="#ffffff" letter-spacing="-2">Sterling Edge</text>
+  <text x="384" y="358" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="38" font-weight="500" fill="#93c5fd" letter-spacing="13">TRADE</text>
+
+  <rect x="384" y="396" width="300" height="4" rx="2" fill="url(#rule)"/>
+
+  <text x="384" y="458" font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="30" font-weight="400" fill="#bfdbfe">Forex &#183; Crypto &#183; Stocks &#183; Commodities</text>
+</svg>

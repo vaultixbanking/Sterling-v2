@@ -1,0 +1,233 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ---------------------------------------------------------------------------
+   Sterling Edge Trade — design tokens
+   `primary` is the brand blue scale, `secondary` the neutral slate ramp.
+   Aliasing them semantically means a rebrand is a ten-line diff.
+--------------------------------------------------------------------------- */
+@theme {
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+  --color-primary-950: #172554;
+
+  --color-secondary-50: #f8fafc;
+  --color-secondary-100: #f1f5f9;
+  --color-secondary-200: #e2e8f0;
+  --color-secondary-300: #cbd5e1;
+  --color-secondary-400: #94a3b8;
+  --color-secondary-500: #64748b;
+  --color-secondary-600: #475569;
+  --color-secondary-700: #334155;
+  --color-secondary-800: #1e293b;
+  --color-secondary-900: #0f172a;
+
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-heading: var(--font-sora), var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-white text-secondary-900 antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5 {
+    @apply font-heading;
+  }
+
+  /* Clear the fixed navbar when jumping to in-page anchors */
+  :target {
+    scroll-margin-top: 6rem;
+  }
+
+  ::selection {
+    @apply bg-primary-600 text-white;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-secondary-50;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-secondary-300;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-secondary-400;
+  }
+}
+
+@layer components {
+  /* Constrained content width used on every section */
+  .container-px {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .section-title {
+    @apply text-3xl font-bold tracking-tight text-balance text-secondary-900 sm:text-4xl;
+  }
+
+  .section-subtitle {
+    @apply text-base leading-relaxed text-pretty text-secondary-600 sm:text-lg;
+  }
+
+  /* Small uppercase label sitting above a section title */
+  .eyebrow {
+    @apply inline-flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-primary-600 uppercase;
+  }
+}
+
+/* Tabular numerals wherever figures need to line up */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dotted grid backdrop for decorative sections */
+.bg-dotted {
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--color-primary-900) 14%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+/* Soft blue radial glow, anchored to the top edge */
+.bg-glow {
+  background: radial-gradient(
+    60% 55% at 50% 0%,
+    color-mix(in oklab, var(--color-primary-500) 22%, transparent) 0%,
+    transparent 60%
+  );
+}
+
+/* Edge-fade mask for marquees */
+.mask-fade-x {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 8%,
+    #000 92%,
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 8%,
+    #000 92%,
+    transparent
+  );
+}
+
+@keyframes se-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.animate-marquee {
+  animation: se-marquee 38s linear infinite;
+}
+
+@keyframes se-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+.animate-float {
+  animation: se-float 6s ease-in-out infinite;
+}
+
+/* Toast enter/exit. The viewport sits bottom-right on desktop and top on
+   mobile, so the slide comes from the nearest edge in both cases. */
+@keyframes se-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(110%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes se-toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(110%);
+  }
+}
+.animate-toast-in {
+  animation: se-toast-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.animate-toast-out {
+  animation: se-toast-out 0.15s ease-in forwards;
+}
+
+/* Radix accordion height transitions */
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+.animate-accordion-down {
+  animation: accordion-down 0.22s ease-out;
+}
+.animate-accordion-up {
+  animation: accordion-up 0.22s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .animate-marquee,
+  .animate-float {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

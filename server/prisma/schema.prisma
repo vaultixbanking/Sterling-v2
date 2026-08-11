@@ -1,0 +1,459 @@
+// Sterling Edge Trade — data model
+//
+// Design notes vs. the SwiftEdge backend this replaces:
+//
+//  1. `Transaction` is the ONE ledger. SwiftEdge wrote a `Profit` row *and* a
+//     mirror `Transaction` row for the same event, so the two could drift.
+//     Here a profit is simply a CREDIT/PROFIT transaction.
+//
+//  2. There is deliberately NO `totalBalance` column on `User`. SwiftEdge
+//     stored one, derived it as `holdings + profits`, and mutated it directly
+//     when approving a withdrawal — so the next portfolio load recomputed it
+//     and handed the money back. Balance here is always derived from the
+//     ledger, which makes that class of bug impossible to write.
+//
+//  3. Users and admins share one table, separated by `role`. SwiftEdge had a
+//     second `Admin` model plus a second login route and a second auth
+//     middleware that forgot to check the role.
+//
+//  4. Money is `Decimal`, never `Float`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 keeps connection URLs out of the schema — see prisma.config.ts for
+// the migration datasource, and src/lib/prisma.ts for the runtime adapter.
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum TxType {
+  CREDIT
+  DEBIT
+}
+
+enum TxCategory {
+  DEPOSIT
+  PROFIT
+  HOLDING
+  WITHDRAWAL
+  ADJUSTMENT
+  PLAN_PAYOUT
+  PLAN_PRINCIPAL
+}
+
+enum TxStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum DepositMethod {
+  BANK_TRANSFER
+  CRYPTO
+  DIGITAL_WALLET
+  CARD
+}
+
+enum WithdrawalMethod {
+  CRYPTO
+  BANK
+}
+
+enum PinStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  REVOKED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String     @id @default(cuid())
+  /// Short public-facing account reference shown in the dashboard.
+  uid          String     @unique
+  email        String     @unique
+  username     String     @unique
+  fullName     String
+  phone        String?
+  passwordHash String
+  role         Role       @default(USER)
+  status       UserStatus @default(ACTIVE)
+
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  lastLoginIp     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  holdings            Holding[]
+  transactions        Transaction[]       @relation("UserTransactions")
+  processedTx         Transaction[]       @relation("TransactionProcessor")
+  depositRequests     DepositRequest[]    @relation("UserDeposits")
+  reviewedDeposits    DepositRequest[]    @relation("DepositReviewer")
+  withdrawalRequests  WithdrawalRequest[] @relation("UserWithdrawals")
+  reviewedWithdrawals WithdrawalRequest[] @relation("WithdrawalReviewer")
+  pins                WithdrawalPin[]     @relation("UserPins")
+  issuedPins          WithdrawalPin[]     @relation("PinIssuer")
+  subscriptions       Subscription[]
+  sessions            RefreshSession[]
+  resetTokens         PasswordResetToken[]
+  auditLogs           AuditLog[]          @relation("AuditActor")
+
+  @@index([role, status])
+  @@index([createdAt])
+  @@map("users")
+}
+
+/// One row per issued refresh token. Enables real logout and "sign out
+/// everywhere" — SwiftEdge had no logout and no way to revoke a token.
+model RefreshSession {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// SHA-256 of the token. The raw value never touches the database.
+  tokenHash String    @unique
+  userAgent String?
+  ip        String?
+  /// False when the user declined "keep me signed in": the cookie is issued
+  /// without an expiry so it dies with the browser. Stored because rotation
+  /// has to honour the original choice, and the cookie itself cannot say.
+  persistent Boolean  @default(true)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_sessions")
+}
+
+/// SwiftEdge stored reset tokens in plaintext on the user row.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// The ledger
+// ---------------------------------------------------------------------------
+
+/// Append-only record of every money movement.
+///
+///   balance   = Σ(COMPLETED CREDIT) − Σ(COMPLETED DEBIT)
+///   available = balance − Σ(PENDING DEBIT)
+///
+/// `status` may transition (PENDING → COMPLETED/REJECTED/CANCELLED);
+/// `amount`, `type` and `category` are immutable once written.
+model Transaction {
+  id       String     @id @default(cuid())
+  userId   String
+  user     User       @relation("UserTransactions", fields: [userId], references: [id], onDelete: Cascade)
+  type     TxType
+  category TxCategory
+  /// Always positive. Direction is carried by `type`, never by the sign.
+  amount   Decimal    @db.Decimal(18, 2)
+  status   TxStatus   @default(COMPLETED)
+
+  description String?
+  /// Free-form context: asset symbol, wallet address, bank reference, etc.
+  metadata    Json?
+
+  processedById String?
+  processedBy   User?     @relation("TransactionProcessor", fields: [processedById], references: [id], onDelete: SetNull)
+  processedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  depositRequest    DepositRequest?
+  withdrawalRequest WithdrawalRequest?
+
+  // The balance aggregate filters on (userId, status, type) — this index
+  // serves it directly. SwiftEdge had zero indexes on its hot paths.
+  @@index([userId, status, type])
+  @@index([userId, createdAt])
+  @@index([userId, category, createdAt])
+  @@index([status, type])
+  @@map("transactions")
+}
+
+/// An asset position. Unlike SwiftEdge's embedded array these are editable
+/// and archivable, and each carries an audit trail through AuditLog.
+model Holding {
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name     String
+  symbol   String
+  units    Decimal @db.Decimal(24, 8)
+  valueUsd Decimal @db.Decimal(18, 2)
+
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId, archivedAt])
+  @@map("holdings")
+}
+
+// ---------------------------------------------------------------------------
+// Money in / money out
+// ---------------------------------------------------------------------------
+
+/// User-submitted deposit request. SwiftEdge had no such concept — users could
+/// never tell the platform they had paid; an admin credited them manually.
+model DepositRequest {
+  id     String        @id @default(cuid())
+  userId String
+  user   User          @relation("UserDeposits", fields: [userId], references: [id], onDelete: Cascade)
+  amount Decimal       @db.Decimal(18, 2)
+  method DepositMethod
+  /// Bank reference, crypto tx hash or wallet handle supplied by the user.
+  reference String?
+  /// Object path inside the private Supabase Storage bucket.
+  proofPath String?
+  status    RequestStatus @default(PENDING)
+
+  reviewedById String?
+  reviewedBy   User?     @relation("DepositReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  reviewNote   String?
+
+  /// Set once approved — the CREDIT this request produced.
+  transactionId String?      @unique
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("deposit_requests")
+}
+
+model WithdrawalRequest {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation("UserWithdrawals", fields: [userId], references: [id], onDelete: Cascade)
+  /// Amount the user receives.
+  amount     Decimal          @db.Decimal(18, 2)
+  /// Platform fee, debited on top of `amount`.
+  feeAmount  Decimal          @db.Decimal(18, 2) @default(0)
+  method     WithdrawalMethod
+  /// Wallet address + network, or bank name/account/routing.
+  destination Json
+  status      RequestStatus   @default(PENDING)
+
+  reviewedById String?
+  reviewedBy   User?     @relation("WithdrawalReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  reviewNote   String?
+
+  /// The PENDING debit that reserves these funds. Created with the request,
+  /// so the money is held the moment it is submitted.
+  transactionId String      @unique
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("withdrawal_requests")
+}
+
+/// Admin-issued, single-use withdrawal PIN.
+///
+/// SwiftEdge's PINs had no `userId` (any PIN worked for any user), were never
+/// marked consumed (infinitely replayable), were generated with Math.random(),
+/// and were never actually checked when withdrawing.
+model WithdrawalPin {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation("UserPins", fields: [userId], references: [id], onDelete: Cascade)
+  /// bcrypt hash of the PIN. The raw value is shown to the admin once.
+  pinHash   String
+  status    PinStatus @default(ACTIVE)
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  issuedById String?
+  issuedBy   User?   @relation("PinIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@map("withdrawal_pins")
+}
+
+// ---------------------------------------------------------------------------
+// Investment plans
+// ---------------------------------------------------------------------------
+
+model Plan {
+  id   String @id @default(cuid())
+  slug String @unique
+  name String
+
+  /// Basis points per day (120 = 1.20%). Integer maths avoids float drift.
+  dailyReturnBps Int
+  durationDays   Int
+  minDeposit     Decimal  @db.Decimal(18, 2)
+  /// Null means unlimited.
+  maxDeposit     Decimal? @db.Decimal(18, 2)
+  referralBonusPercent Int @default(0)
+
+  description String
+  features    String[]
+  isPopular   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([isActive, sortOrder])
+  @@map("plans")
+}
+
+model Subscription {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId String
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  principal Decimal            @db.Decimal(18, 2)
+  status    SubscriptionStatus @default(ACTIVE)
+  startedAt DateTime           @default(now())
+  endsAt    DateTime
+  /// UTC date of the last accrual, so the daily job is idempotent.
+  lastAccruedOn DateTime?
+  totalAccrued  Decimal        @db.Decimal(18, 2) @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([status, endsAt])
+  @@map("subscriptions")
+}
+
+// ---------------------------------------------------------------------------
+// Platform payment destinations (admin-configured)
+//
+// SwiftEdge modelled these as one `Deposit` document with a union of three
+// optional branches, kept consistent by $unset at write time and a one-off
+// cleanup.js migration. Three tables remove the problem entirely.
+// ---------------------------------------------------------------------------
+
+model BankAccountConfig {
+  id            String   @id @default(cuid())
+  bankName      String
+  accountName   String
+  accountNumber String
+  routingNumber String?
+  swiftCode     String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("bank_account_configs")
+}
+
+model CryptoWalletConfig {
+  id            String   @id @default(cuid())
+  /// BTC, ETH, USDT…
+  currency      String   @unique
+  label         String
+  walletAddress String
+  network       String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("crypto_wallet_configs")
+}
+
+model DigitalWalletConfig {
+  id         String   @id @default(cuid())
+  /// PayPal, Cash App, Venmo, Zelle…
+  provider   String   @unique
+  handle     String
+  instructions String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("digital_wallet_configs")
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+/// Every admin mutation writes one row. SwiftEdge kept no trail at all beyond
+/// two columns on the transaction being approved.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String
+  targetId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
