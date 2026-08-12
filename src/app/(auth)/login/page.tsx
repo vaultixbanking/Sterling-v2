@@ -2,15 +2,17 @@ import { Suspense } from "react"
 import type { Metadata } from "next"
 import Link from "next/link"
 
+import { pageSeo } from "@/lib/seo"
 import { AuthShell } from "@/components/auth/auth-shell"
 import { LoginForm } from "@/components/auth/login-form"
 import { Skeleton } from "@/components/ui/skeleton"
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageSeo({
   title: "Sign In",
   description:
     "Sign in to your Sterling Edge Trade account to manage your portfolio across forex, crypto, stocks and commodities.",
-}
+  path: "/login",
+})
 
 export default function LoginPage() {
   return (

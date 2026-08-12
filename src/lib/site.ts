@@ -34,6 +34,14 @@ export const company = {
   phoneHref: "+18884702255",
   url: "https://sterlingedgetrade.com",
   address: "48 Wall Street, 11th Floor, New York, NY 10005",
+  /** The same address split out for schema.org PostalAddress */
+  addressParts: {
+    street: "48 Wall Street, 11th Floor",
+    locality: "New York",
+    region: "NY",
+    postalCode: "10005",
+    country: "US",
+  },
   hours: "Support available 24 hours a day, 7 days a week",
   social: {
     x: "#",

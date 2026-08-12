@@ -3,6 +3,7 @@ import { Inter, Sora, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 
 import { Providers } from "@/components/providers"
+import { baseOpenGraph, shareImage } from "@/lib/seo"
 import { company } from "@/lib/site"
 
 const inter = Inter({
@@ -40,18 +41,27 @@ export const metadata: Metadata = {
     "investment platform",
     "Sterling Edge Trade",
   ],
-  openGraph: {
-    type: "website",
-    siteName: company.name,
-    title: `${company.name} — ${company.tagline}`,
-    description: company.description,
-    images: [{ url: "/og-image.jpg", width: 1200, height: 630 }],
-  },
+  /* Inherited by every route. Deliberately no `alternates.canonical` here —
+     metadata is shallow-merged, so a canonical set at the root would tell
+     crawlers that every page is a duplicate of it. Canonicals are per page. */
+  openGraph: baseOpenGraph,
   twitter: {
     card: "summary_large_image",
     title: `${company.name} — ${company.tagline}`,
     description: company.description,
-    images: ["/og-image.jpg"],
+    images: [shareImage.url],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      // Without these Google truncates the snippet and shows a thumbnail.
+      "max-snippet": -1,
+      "max-image-preview": "large",
+      "max-video-preview": -1,
+    },
   },
   icons: {
     icon: "/favicon.png",

@@ -1,14 +1,16 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
+import { pageSeo } from "@/lib/seo"
 import { AuthShell } from "@/components/auth/auth-shell"
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form"
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageSeo({
   title: "Reset Password",
   description:
     "Reset the password on your Sterling Edge Trade account. We'll email you a secure link.",
-}
+  path: "/forgot-password",
+})
 
 export default function ForgotPasswordPage() {
   return (

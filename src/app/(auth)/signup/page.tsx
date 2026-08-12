@@ -1,14 +1,16 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
+import { pageSeo } from "@/lib/seo"
 import { AuthShell } from "@/components/auth/auth-shell"
 import { SignupForm } from "@/components/auth/signup-form"
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageSeo({
   title: "Open an Account",
   description:
     "Open a Sterling Edge Trade account in minutes and trade over 1,000 instruments across forex, crypto, stocks and commodities from $250.",
-}
+  path: "/signup",
+})
 
 export default function SignupPage() {
   return (
