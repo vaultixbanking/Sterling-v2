@@ -16,7 +16,6 @@ export function Faq() {
     <Section id="faq" className="bg-secondary-50">
       <Reveal>
         <SectionHeading
-          eyebrow="FAQ"
           title="Questions, answered"
           description="The things people ask us most often before opening an account."
         />

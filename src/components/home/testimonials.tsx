@@ -10,7 +10,6 @@ export function Testimonials() {
     <Section id="testimonials" className="bg-white">
       <Reveal>
         <SectionHeading
-          eyebrow="Client stories"
           title="What our traders say"
           description="Real accounts, real balances. Results vary — these are individual experiences, not a promise of what you'll earn."
         />

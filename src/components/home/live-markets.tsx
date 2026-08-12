@@ -10,7 +10,6 @@ export function LiveMarkets() {
     <Section id="live-markets" className="bg-white">
       <Reveal>
         <SectionHeading
-          eyebrow="Live data"
           title="Real prices, updated continuously"
           description="The same market data our traders act on, streamed straight from the exchanges. Switch tabs to move between asset classes."
         />

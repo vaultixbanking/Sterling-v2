@@ -11,7 +11,6 @@ export function HowItWorks() {
     >
       <Reveal>
         <SectionHeading
-          eyebrow="Getting started"
           title="Trading in four steps"
           description="From signup to your first position in under ten minutes. No paperwork, no waiting on a branch to call you back."
         />

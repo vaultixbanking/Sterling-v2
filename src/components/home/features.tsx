@@ -9,7 +9,6 @@ export function Features() {
     <Section id="why-us" className="bg-white">
       <Reveal>
         <SectionHeading
-          eyebrow="Why Sterling Edge"
           title="Built for traders who take it seriously"
           description="Everything here exists to remove friction between your decision and your position — and to make sure your capital is still there tomorrow."
         />

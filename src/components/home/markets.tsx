@@ -15,7 +15,6 @@ export function Markets() {
     >
       <Reveal>
         <SectionHeading
-          eyebrow="Markets"
           title="Four markets. One account."
           description="Move between currencies, digital assets, equities and commodities without ever splitting your capital across platforms."
         />

@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useEffect, useState } from "react"
+import { motion } from "framer-motion"
 import { ArrowRight, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -12,6 +13,7 @@ import { navLinks } from "@/lib/site"
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState(false)
+  const [hovered, setHovered] = useState<string | null>(null)
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12)
@@ -37,38 +39,46 @@ export function Navbar() {
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
-  /** Transparent over the hero photo, solid once the user scrolls */
-  const onDark = !scrolled && !open
+  /* The hero is a light photograph now, so the bar always carries dark type —
+     only its background changes, from transparent at rest to frosted white. */
+  const solid = scrolled || open
 
   return (
     <>
       <header
         className={cn(
           "fixed inset-x-0 top-0 z-50 transition-all duration-300",
-          onDark
-            ? "border-b border-transparent bg-transparent py-3"
-            : "border-b border-secondary-100 bg-white/90 py-2 shadow-sm backdrop-blur-xl supports-[backdrop-filter]:bg-white/80"
+          solid
+            ? "border-b border-secondary-100 bg-white/90 py-2 shadow-sm backdrop-blur-xl supports-[backdrop-filter]:bg-white/80"
+            : "border-b border-transparent bg-transparent py-3"
         )}
       >
         <div className="container-px flex h-14 items-center justify-between gap-4">
           <Link href="/" aria-label="Sterling Edge Trade home" className="shrink-0">
-            <Logo invert={onDark} />
+            <Logo />
           </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden items-center gap-1 lg:flex">
+          {/* Desktop nav. The underline is a single shared element that springs
+              from link to link, rather than one per link fading in place. */}
+          <nav
+            onMouseLeave={() => setHovered(null)}
+            className="hidden items-center gap-1 lg:flex"
+          >
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className={cn(
-                  "rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  onDark
-                    ? "text-white/80 hover:bg-white/10 hover:text-white"
-                    : "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
-                )}
+                onMouseEnter={() => setHovered(link.href)}
+                className="relative rounded-md px-3 py-2 text-sm font-medium text-secondary-600 transition-colors duration-200 hover:text-secondary-900"
               >
                 {link.label}
+                {hovered === link.href && (
+                  <motion.span
+                    layoutId="nav-underline"
+                    transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                    className="absolute inset-x-3 bottom-1 h-0.5 rounded-full bg-primary-600"
+                  />
+                )}
               </Link>
             ))}
           </nav>
@@ -77,12 +87,7 @@ export function Navbar() {
           <div className="flex items-center gap-2">
             <Link
               href="/login"
-              className={cn(
-                "hidden h-10 items-center rounded-lg px-4 text-sm font-semibold transition-colors sm:inline-flex",
-                onDark
-                  ? "border border-white/25 text-white hover:bg-white/10"
-                  : "border border-secondary-200 text-secondary-700 hover:bg-secondary-50"
-              )}
+              className="hidden h-10 items-center rounded-lg border border-secondary-200 px-4 text-sm font-semibold text-secondary-700 transition-colors hover:bg-secondary-50 sm:inline-flex"
             >
               Log In
             </Link>
@@ -100,29 +105,11 @@ export function Navbar() {
               aria-label="Open menu"
               aria-expanded={open}
               onClick={() => setOpen(true)}
-              className={cn(
-                "z-60 inline-flex size-10 flex-col items-center justify-center gap-1.5 rounded-lg transition-colors lg:hidden",
-                onDark ? "text-white hover:bg-white/10" : "hover:bg-secondary-100"
-              )}
+              className="z-60 inline-flex size-10 flex-col items-center justify-center gap-1.5 rounded-lg transition-colors hover:bg-secondary-100 lg:hidden"
             >
-              <span
-                className={cn(
-                  "block h-0.5 w-6 rounded-full transition-colors",
-                  onDark ? "bg-white" : "bg-secondary-700"
-                )}
-              />
-              <span
-                className={cn(
-                  "block h-0.5 w-6 rounded-full transition-colors",
-                  onDark ? "bg-white" : "bg-secondary-700"
-                )}
-              />
-              <span
-                className={cn(
-                  "block h-0.5 w-6 rounded-full transition-colors",
-                  onDark ? "bg-white" : "bg-secondary-700"
-                )}
-              />
+              <span className="block h-0.5 w-6 rounded-full bg-secondary-700" />
+              <span className="block h-0.5 w-6 rounded-full bg-secondary-700" />
+              <span className="block h-0.5 w-6 rounded-full bg-secondary-700" />
             </button>
           </div>
         </div>

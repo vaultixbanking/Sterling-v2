@@ -8,7 +8,6 @@ export function CopyTrading() {
     <Section id="copy-trading" className="bg-white">
       <Reveal>
         <SectionHeading
-          eyebrow="Copy trading"
           title="Follow traders who already know the way"
           description="Mirror the positions of experienced traders automatically, in proportion to your own capital. Watch how it works, then decide who earns your allocation."
         />

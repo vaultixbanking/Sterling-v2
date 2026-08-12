@@ -24,7 +24,6 @@ export function Platform() {
         <Reveal>
           <SectionHeading
             invert
-            eyebrow="The platform"
             title="Professional-grade tools, included"
             description="Real charting, real risk management, real portfolio analytics. Not screenshots — the same tools our desk uses, wired to your live account."
           />

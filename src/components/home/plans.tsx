@@ -17,7 +17,6 @@ export function Plans() {
     >
       <Reveal>
         <SectionHeading
-          eyebrow="Investment plans"
           title="Pick the tier that matches your capital"
           description="Every plan opens the same four markets. What changes is your rate, your term, and how much of our team's attention comes with it."
         />
