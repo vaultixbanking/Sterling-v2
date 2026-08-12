@@ -15,6 +15,7 @@ import { recordAudit } from "../../services/audit.service.js"
 import {
   sendDepositApprovedEmail,
   sendDepositRejectedEmail,
+  sendDepositSubmittedEmail,
 } from "../../services/email/email.service.js"
 import { credit, getBalanceSnapshot } from "../../services/ledger.service.js"
 
@@ -56,7 +57,7 @@ export async function createDeposit(
 
   const proofPath = file ? await uploadProof(userId, file) : null
 
-  return prisma.depositRequest.create({
+  const deposit = await prisma.depositRequest.create({
     data: {
       userId,
       amount,
@@ -64,7 +65,37 @@ export async function createDeposit(
       reference: input.reference?.trim() || null,
       proofPath,
     },
+    include: { user: true },
   })
+
+  // Withdrawals acknowledge submission, so deposits must too — otherwise the
+  // user hands over money and hears nothing until an admin gets round to it.
+  // Fire-and-forget: a mail outage must not fail a deposit that is already
+  // recorded, and the request row is the source of truth either way.
+  void sendDepositSubmittedEmail(
+    deposit.user,
+    serialize(deposit.amount),
+    depositMethodLabel(deposit.method),
+    deposit.reference
+  ).catch((error: unknown) => {
+    logger.error({ err: error }, "Deposit submitted email failed")
+  })
+
+  return deposit
+}
+
+/** `BANK_TRANSFER` reads badly in an email. */
+function depositMethodLabel(method: DepositMethod): string {
+  switch (method) {
+    case DepositMethod.BANK_TRANSFER:
+      return "Bank transfer"
+    case DepositMethod.CRYPTO:
+      return "Cryptocurrency"
+    case DepositMethod.CARD:
+      return "Card"
+    default:
+      return method
+  }
 }
 
 export async function listForUser(userId: string) {

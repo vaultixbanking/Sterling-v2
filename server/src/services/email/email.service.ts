@@ -92,6 +92,63 @@ export function sendPasswordChangedEmail(user: User): Promise<void> {
   )
 }
 
+export function sendLoginAlertEmail(
+  user: User,
+  context: { ipAddress: string | null; device: string | null }
+): Promise<void> {
+  return send(
+    user.email,
+    templates.loginAlertEmail({
+      fullName: user.fullName,
+      when: new Date(),
+      ipAddress: context.ipAddress,
+      device: context.device,
+      supportEmail: env.SUPPORT_EMAIL,
+    })
+  )
+}
+
+export function sendAccountSuspendedEmail(
+  user: User,
+  reason: string | null
+): Promise<void> {
+  return send(
+    user.email,
+    templates.accountSuspendedEmail({
+      fullName: user.fullName,
+      reason,
+      supportEmail: env.SUPPORT_EMAIL,
+    })
+  )
+}
+
+export function sendAccountReactivatedEmail(user: User): Promise<void> {
+  return send(
+    user.email,
+    templates.accountReactivatedEmail({
+      fullName: user.fullName,
+      appUrl: env.APP_URL,
+    })
+  )
+}
+
+export function sendDepositSubmittedEmail(
+  user: User,
+  amount: string,
+  method: string,
+  reference: string | null
+): Promise<void> {
+  return send(
+    user.email,
+    templates.depositSubmittedEmail({
+      fullName: user.fullName,
+      amount,
+      method,
+      reference,
+    })
+  )
+}
+
 export function sendDepositApprovedEmail(
   user: User,
   amount: string,
@@ -171,6 +228,72 @@ export function sendWithdrawalRejectedEmail(
   )
 }
 
+export function sendWithdrawalCancelledEmail(
+  user: User,
+  amount: string,
+  newBalance: string
+): Promise<void> {
+  return send(
+    user.email,
+    templates.withdrawalCancelledEmail({
+      fullName: user.fullName,
+      amount,
+      newBalance,
+    })
+  )
+}
+
+export function sendSubscriptionConfirmedEmail(
+  user: User,
+  subscription: {
+    planName: string
+    principal: string
+    dailyReturnPercent: string
+    durationDays: number
+    endsAt: Date
+    newBalance: string
+  }
+): Promise<void> {
+  return send(
+    user.email,
+    templates.subscriptionConfirmedEmail({
+      fullName: user.fullName,
+      ...subscription,
+    })
+  )
+}
+
+export function sendSubscriptionCompletedEmail(
+  user: User,
+  subscription: {
+    planName: string
+    principal: string
+    totalEarned: string
+    newBalance: string
+  }
+): Promise<void> {
+  return send(
+    user.email,
+    templates.subscriptionCompletedEmail({
+      fullName: user.fullName,
+      ...subscription,
+    })
+  )
+}
+
+export function sendSubscriptionCancelledEmail(
+  user: User,
+  subscription: { planName: string; principal: string; newBalance: string }
+): Promise<void> {
+  return send(
+    user.email,
+    templates.subscriptionCancelledEmail({
+      fullName: user.fullName,
+      ...subscription,
+    })
+  )
+}
+
 export function sendAccountCreditedEmail(
   user: User,
   amount: string,
@@ -197,6 +320,30 @@ export function sendWithdrawalPinEmail(
     templates.withdrawalPinEmail({
       fullName: user.fullName,
       expiresInMinutes,
+    })
+  )
+}
+
+export function sendWithdrawalPinRevokedEmail(user: User): Promise<void> {
+  return send(
+    user.email,
+    templates.withdrawalPinRevokedEmail({ fullName: user.fullName })
+  )
+}
+
+export function sendEmailVerificationEmail(
+  user: User,
+  token: string,
+  ttlMinutes: number
+): Promise<void> {
+  const verifyUrl = `${env.APP_URL}/verify-email?token=${encodeURIComponent(token)}`
+
+  return send(
+    user.email,
+    templates.emailVerificationEmail({
+      fullName: user.fullName,
+      verifyUrl,
+      ttlMinutes,
     })
   )
 }

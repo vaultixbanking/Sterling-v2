@@ -15,7 +15,11 @@ import type { Pagination } from "../../lib/pagination.js"
 import { toSkipTake } from "../../lib/pagination.js"
 import { prisma } from "../../lib/prisma.js"
 import { recordAudit } from "../../services/audit.service.js"
-import { sendAccountCreditedEmail } from "../../services/email/email.service.js"
+import {
+  sendAccountCreditedEmail,
+  sendAccountReactivatedEmail,
+  sendAccountSuspendedEmail,
+} from "../../services/email/email.service.js"
 import { credit, debit, getBalanceSnapshot } from "../../services/ledger.service.js"
 
 /**
@@ -201,6 +205,23 @@ export async function setUserStatus(params: {
     after: { status: params.status },
     ip: params.ip,
   })
+
+  // Losing access to an account holding your money without being told is the
+  // kind of silence that turns into a chargeback. Only mail on an actual
+  // transition — re-saving the same status should not re-notify.
+  if (updated.status !== user.status) {
+    const notice =
+      updated.status === UserStatus.SUSPENDED
+        ? sendAccountSuspendedEmail(updated, null)
+        : user.status === UserStatus.SUSPENDED &&
+            updated.status === UserStatus.ACTIVE
+          ? sendAccountReactivatedEmail(updated)
+          : null
+
+    void notice?.catch((error: unknown) => {
+      logger.error({ err: error }, "Account status email failed")
+    })
+  }
 
   return updated
 }

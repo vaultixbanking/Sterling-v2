@@ -1,4 +1,4 @@
-import { PinStatus, type Prisma } from "@prisma/client"
+import { PinStatus, type Prisma, type User } from "@prisma/client"
 
 import {
   PIN_ALLOWED_LENGTHS,
@@ -119,11 +119,25 @@ export async function listPins(userId?: string) {
   })
 }
 
-export async function revokePin(id: string): Promise<void> {
-  await prisma.withdrawalPin.updateMany({
+/**
+ * @returns the pin's owner when an *active* pin was actually revoked, so the
+ *   caller can notify them. Null when the pin was already used, expired or
+ *   revoked — re-deleting must not fire a second email.
+ */
+export async function revokePin(id: string): Promise<User | null> {
+  const revoked = await prisma.withdrawalPin.updateMany({
     where: { id, status: PinStatus.ACTIVE },
     data: { status: PinStatus.REVOKED },
   })
+
+  if (revoked.count === 0) return null
+
+  const pin = await prisma.withdrawalPin.findUnique({
+    where: { id },
+    include: { user: true },
+  })
+
+  return pin?.user ?? null
 }
 
 /** Housekeeping for the cron job; expiry is also enforced at read time. */

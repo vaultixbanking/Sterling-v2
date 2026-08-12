@@ -19,6 +19,7 @@ import { percentOf, round2, serialize, toMoney } from "../../lib/money.js"
 import { prisma } from "../../lib/prisma.js"
 import {
   sendWithdrawalApprovedEmail,
+  sendWithdrawalCancelledEmail,
   sendWithdrawalRejectedEmail,
   sendWithdrawalSubmittedEmail,
 } from "../../services/email/email.service.js"
@@ -168,6 +169,7 @@ export async function cancelWithdrawal(
 ): Promise<void> {
   const request = await prisma.withdrawalRequest.findUnique({
     where: { id: requestId },
+    include: { user: true },
   })
 
   if (!request) throw new NotFoundError("Withdrawal request")
@@ -182,6 +184,18 @@ export async function cancelWithdrawal(
       where: { id: requestId },
       data: { status: RequestStatus.CANCELLED },
     })
+  })
+
+  // Releasing a hold moves the available balance, so it gets the same paper
+  // trail as approve and reject — and doubles as an alert if it wasn't them.
+  const { balance } = await getBalanceSnapshot(userId)
+
+  void sendWithdrawalCancelledEmail(
+    request.user,
+    serialize(request.amount),
+    serialize(balance)
+  ).catch((error: unknown) => {
+    logger.error({ err: error }, "Withdrawal cancelled email failed")
   })
 }
 

@@ -22,7 +22,10 @@ import { authenticate } from "../../middleware/authenticate.js"
 import { requireAdmin } from "../../middleware/authorize.js"
 import { validate } from "../../middleware/validate.js"
 import { recordAudit } from "../../services/audit.service.js"
-import { sendWithdrawalPinEmail } from "../../services/email/email.service.js"
+import {
+  sendWithdrawalPinEmail,
+  sendWithdrawalPinRevokedEmail,
+} from "../../services/email/email.service.js"
 import { getProofLink, processDeposit } from "../deposits/deposits.service.js"
 import { issuePin, listPins, revokePin } from "../pins/pins.service.js"
 import { processWithdrawal } from "../withdrawals/withdrawals.service.js"
@@ -424,9 +427,21 @@ adminRouter.get(
 
 adminRouter.delete(
   "/pins/:id",
-  validate({ params: idParam }),
+  validate({
+    params: idParam,
+    // Off by default, mirroring issue: a PIN the user was never told about
+    // should not be announced to them at the moment it is cancelled.
+    query: z.object({ notifyUser: z.coerce.boolean().optional() }),
+  }),
   asyncHandler(async (req, res) => {
-    await revokePin(req.params.id as string)
+    const owner = await revokePin(req.params.id as string)
+
+    if (owner && (req.query as { notifyUser?: boolean }).notifyUser) {
+      void sendWithdrawalPinRevokedEmail(owner).catch(() => {
+        /* non-fatal — the PIN is already dead in the database */
+      })
+    }
+
     await recordAudit({
       actorId: req.auth!.userId,
       action: "pin.revoke",

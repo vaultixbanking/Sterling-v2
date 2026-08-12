@@ -4,12 +4,18 @@ import {
   TxCategory,
   type Plan,
   type Subscription,
+  type User,
 } from "@prisma/client"
 
 import { NotFoundError, ValidationError } from "../../lib/errors.js"
 import { logger } from "../../lib/logger.js"
 import { ZERO, bpsOf, round2, serialize, toMoney } from "../../lib/money.js"
 import { prisma } from "../../lib/prisma.js"
+import {
+  sendSubscriptionCancelledEmail,
+  sendSubscriptionCompletedEmail,
+  sendSubscriptionConfirmedEmail,
+} from "../../services/email/email.service.js"
 import { credit, debit, getBalanceSnapshot } from "../../services/ledger.service.js"
 
 /**
@@ -96,7 +102,7 @@ export async function subscribe(
   const endsAt = new Date()
   endsAt.setUTCDate(endsAt.getUTCDate() + plan.durationDays)
 
-  return prisma.$transaction(
+  const subscription = await prisma.$transaction(
     async (tx) => {
       // Settles immediately — the capital is committed, not merely reserved.
       await debit(
@@ -123,6 +129,41 @@ export async function subscribe(
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
   )
+
+  // Committing capital is the single largest thing a user does here. Confirm it
+  // outside the transaction so a mail failure cannot roll back a settled debit.
+  void notifySubscriber(userId, async (user) => {
+    const { balance } = await getBalanceSnapshot(userId)
+
+    return sendSubscriptionConfirmedEmail(user, {
+      planName: plan.name,
+      principal: serialize(principal),
+      dailyReturnPercent: (plan.dailyReturnBps / 100).toFixed(2),
+      durationDays: plan.durationDays,
+      endsAt,
+      newBalance: serialize(balance),
+    })
+  })
+
+  return subscription
+}
+
+/**
+ * Look the user up and send, swallowing failures.
+ *
+ * Every plan email is a courtesy on top of a ledger entry that has already
+ * settled — none of them may propagate, and none may be awaited by the caller.
+ */
+function notifySubscriber(
+  userId: string,
+  send: (user: User) => Promise<void>
+): Promise<void> {
+  return prisma.user
+    .findUnique({ where: { id: userId } })
+    .then((user) => (user ? send(user) : undefined))
+    .catch((error: unknown) => {
+      logger.error({ err: error, userId }, "Plan email failed")
+    })
 }
 
 export async function cancelSubscription(
@@ -157,6 +198,16 @@ export async function cancelSubscription(
     await tx.subscription.update({
       where: { id: subscription.id },
       data: { status: SubscriptionStatus.CANCELLED },
+    })
+  })
+
+  void notifySubscriber(userId, async (user) => {
+    const { balance } = await getBalanceSnapshot(userId)
+
+    return sendSubscriptionCancelledEmail(user, {
+      planName: subscription.plan.name,
+      principal: serialize(subscription.principal),
+      newBalance: serialize(balance),
     })
   })
 }
@@ -234,6 +285,20 @@ export async function accrueDailyReturns(): Promise<{
         processed += 1
         credited = credited.add(payout)
       })
+
+      if (matured) {
+        void notifySubscriber(subscription.userId, async (user) => {
+          const { balance } = await getBalanceSnapshot(subscription.userId)
+
+          return sendSubscriptionCompletedEmail(user, {
+            planName: subscription.plan.name,
+            principal: serialize(subscription.principal),
+            // `totalAccrued` is the pre-run figure; today's payout is the last.
+            totalEarned: serialize(subscription.totalAccrued.add(payout)),
+            newBalance: serialize(balance),
+          })
+        })
+      }
     } catch (error) {
       // One bad subscription must not stop the rest of the run.
       logger.error(
