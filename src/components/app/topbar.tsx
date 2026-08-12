@@ -4,7 +4,15 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { DropdownMenu } from "radix-ui"
-import { ChevronDown, LogOut, Menu, Settings, User } from "lucide-react"
+import {
+  ChevronDown,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  User,
+} from "lucide-react"
 
 import { useAuth } from "@/components/providers/auth-provider"
 import { useToast } from "@/components/ui/toast"
@@ -21,9 +29,13 @@ import { cn } from "@/lib/utils"
 export function Topbar({
   title,
   onOpenMenu,
+  collapsed,
+  onToggleSidebar,
 }: {
   title: string
   onOpenMenu: () => void
+  collapsed: boolean
+  onToggleSidebar: () => void
 }) {
   const { user, logout } = useAuth()
   const router = useRouter()
@@ -55,6 +67,25 @@ export function Topbar({
         className="-ml-1 rounded-lg p-2 text-secondary-600 transition-colors hover:bg-secondary-100 hover:text-secondary-900 focus-visible:ring-4 focus-visible:ring-primary-200 focus-visible:outline-none lg:hidden"
       >
         <Menu className="size-5" />
+      </button>
+
+      {/*
+        Desktop counterpart to the hamburger, in the same slot. Both the label
+        and the icon flip with the state so the control reads correctly whether
+        the rail is open or shut.
+      */}
+      <button
+        type="button"
+        onClick={onToggleSidebar}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className="-ml-1 hidden rounded-lg p-2 text-secondary-600 transition-colors hover:bg-secondary-100 hover:text-secondary-900 focus-visible:ring-4 focus-visible:ring-primary-200 focus-visible:outline-none lg:block"
+      >
+        {collapsed ? (
+          <PanelLeftOpen className="size-5" />
+        ) : (
+          <PanelLeftClose className="size-5" />
+        )}
       </button>
 
       <h1 className="truncate font-heading text-base font-bold text-secondary-900 sm:text-lg">

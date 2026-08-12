@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ChevronLeft, ShieldCheck } from "lucide-react"
+import { ShieldCheck } from "lucide-react"
 
 import { Logo } from "@/components/logo"
 import { isActivePath, type NavItem } from "@/lib/app-nav"
@@ -15,18 +15,20 @@ import { cn } from "@/lib/utils"
  * icon rail, and the mobile drawer's contents — because they differ only in
  * width and whether labels are visible. Keeping them as one avoids the drift
  * where a link gets added to the desktop nav and forgotten on mobile.
+ *
+ * The collapse toggle deliberately lives in the topbar, not here. When it sat
+ * inside the sidebar it had to move — header when expanded, footer when
+ * collapsed — so collapsing the rail appeared to delete the control that undid
+ * it. A fixed position in the topbar is the same target in both states.
  */
 export function Sidebar({
   items,
   collapsed,
-  onToggle,
   onNavigate,
   isAdmin = false,
 }: {
   items: NavItem[]
   collapsed: boolean
-  /** Omitted in the mobile drawer, where collapsing makes no sense. */
-  onToggle?: () => void
   /** Lets the drawer close itself when a link is followed. */
   onNavigate?: () => void
   isAdmin?: boolean
@@ -38,7 +40,7 @@ export function Sidebar({
       <div
         className={cn(
           "flex h-16 shrink-0 items-center border-b border-secondary-200/70",
-          collapsed ? "justify-center px-2" : "justify-between px-5"
+          collapsed ? "justify-center px-2" : "px-5"
         )}
       >
         <Link
@@ -49,17 +51,6 @@ export function Sidebar({
         >
           <Logo showWordmark={!collapsed} />
         </Link>
-
-        {onToggle && !collapsed && (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label="Collapse sidebar"
-            className="hidden rounded-lg p-1.5 text-secondary-500 transition-colors hover:bg-secondary-200/70 hover:text-secondary-900 focus-visible:ring-4 focus-visible:ring-primary-200 focus-visible:outline-none lg:block"
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-        )}
       </div>
 
       {isAdmin && (
@@ -107,17 +98,6 @@ export function Sidebar({
           )
         })}
       </nav>
-
-      {onToggle && collapsed && (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label="Expand sidebar"
-          className="hidden h-12 shrink-0 items-center justify-center border-t border-secondary-200/70 text-secondary-500 transition-colors hover:bg-secondary-200/70 hover:text-secondary-900 focus-visible:ring-4 focus-visible:ring-primary-200 focus-visible:outline-none lg:flex"
-        >
-          <ChevronLeft className="size-4 rotate-180" />
-        </button>
-      )}
     </div>
   )
 }

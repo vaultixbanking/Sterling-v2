@@ -61,12 +61,7 @@ export function AppShell({
             collapsed ? "w-[4.5rem]" : "w-64"
           )}
         >
-          <Sidebar
-            items={items}
-            collapsed={collapsed}
-            onToggle={toggleCollapsed}
-            isAdmin={adminOnly}
-          />
+          <Sidebar items={items} collapsed={collapsed} isAdmin={adminOnly} />
         </aside>
 
         <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
@@ -92,7 +87,12 @@ export function AppShell({
               collapsed ? "lg:pl-[4.5rem]" : "lg:pl-64"
             )}
           >
-            <Topbar title={title} onOpenMenu={() => setDrawerOpen(true)} />
+            <Topbar
+              title={title}
+              onOpenMenu={() => setDrawerOpen(true)}
+              collapsed={collapsed}
+              onToggleSidebar={toggleCollapsed}
+            />
             <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
           </div>
         </Dialog.Root>
