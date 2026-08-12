@@ -43,3 +43,13 @@ next-env.d.ts
 # Backend build output and env (server/ has its own .gitignore too)
 server/dist/
 server/node_modules/
+
+# One-off Mongo -> Postgres migration tooling.
+#
+# Excluded because this repository is PUBLIC and migration/MAPPING.md and
+# RESUME-HERE.md contain real customer data: account references mapped to their
+# balances, the platform's total balance, and the Supabase project ref. The
+# folder is also disposable — it is deleted once the cutover is signed off.
+#
+# If it needs version control, put it in a PRIVATE repository, not this one.
+migration/
