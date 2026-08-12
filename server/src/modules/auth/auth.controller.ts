@@ -21,9 +21,15 @@ export async function register(req: Request, res: Response): Promise<void> {
 
 export async function login(req: Request, res: Response): Promise<void> {
   const user = await authService.login(req.body)
+  const context = requestContext(req)
+
+  // Awaited, and before the session is issued: the lookup compares against
+  // prior sessions, so the new row must not exist yet or it matches itself and
+  // the alert never fires. The email itself is fire-and-forget inside.
+  await authService.notifyIfNewDevice(user, context)
 
   const refresh = await tokenService.issueRefreshSession(user.id, {
-    ...requestContext(req),
+    ...context,
     persistent: req.body.remember as boolean,
   })
   tokenService.setRefreshCookie(res, refresh)
@@ -89,6 +95,25 @@ export async function resetPassword(
   await authService.resetPassword(req.body.token, req.body.password)
   tokenService.clearRefreshCookie(res)
   ok(res, { message: "Password updated. Please sign in again." })
+}
+
+export async function verifyEmail(req: Request, res: Response): Promise<void> {
+  const user = await authService.verifyEmail(req.body.token)
+  ok(res, { user, message: "Your email address is confirmed." })
+}
+
+export async function resendVerification(
+  req: Request,
+  res: Response
+): Promise<void> {
+  await authService.requestEmailVerificationByEmail(req.body.email)
+
+  // Identical response whether or not the address exists or is already
+  // confirmed — otherwise this endpoint enumerates accounts.
+  ok(res, {
+    message:
+      "If that address needs confirming, a new link is on its way.",
+  })
 }
 
 export async function me(req: Request, res: Response): Promise<void> {

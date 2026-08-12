@@ -131,6 +131,7 @@ model User {
   subscriptions       Subscription[]
   sessions            RefreshSession[]
   resetTokens         PasswordResetToken[]
+  verificationTokens  EmailVerificationToken[]
   auditLogs           AuditLog[]          @relation("AuditActor")
 
   @@index([role, status])
@@ -174,6 +175,26 @@ model PasswordResetToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("password_reset_tokens")
+}
+
+/// Email-confirmation token. Same shape and same rules as the reset token —
+/// only the SHA-256 is stored, and issuing a new one supersedes the last.
+///
+/// Verification is deliberately NOT required to sign in. All 49 accounts
+/// migrated from the old platform predate any verification concept, so gating
+/// login on it would lock out every existing user on launch day.
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
 }
 
 // ---------------------------------------------------------------------------

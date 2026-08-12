@@ -1,6 +1,9 @@
 import { UserStatus, type User } from "@prisma/client"
 
-import { RESET_TOKEN_TTL_MINUTES } from "../../config/constants.js"
+import {
+  EMAIL_VERIFICATION_TTL_MINUTES,
+  RESET_TOKEN_TTL_MINUTES,
+} from "../../config/constants.js"
 import {
   generateToken,
   generateUid,
@@ -16,9 +19,14 @@ import {
 } from "../../lib/errors.js"
 import { logger } from "../../lib/logger.js"
 import { prisma } from "../../lib/prisma.js"
-import { sendPasswordChangedEmail } from "../../services/email/email.service.js"
-import { sendPasswordResetEmail } from "../../services/email/email.service.js"
-import { sendWelcomeEmail } from "../../services/email/email.service.js"
+import { describeDevice } from "../../lib/user-agent.js"
+import {
+  sendEmailVerificationEmail,
+  sendLoginAlertEmail,
+  sendPasswordChangedEmail,
+  sendPasswordResetEmail,
+  sendWelcomeEmail,
+} from "../../services/email/email.service.js"
 import { revokeAllSessions } from "./token.service.js"
 import type {
   ChangePasswordInput,
@@ -102,6 +110,91 @@ export async function register(input: RegisterInput): Promise<PublicUser> {
     logger.error({ err: error, userId: user.id }, "Welcome email failed")
   })
 
+  void requestEmailVerification(user.id).catch((error: unknown) => {
+    logger.error({ err: error, userId: user.id }, "Verification email failed")
+  })
+
+  return toPublicUser(user)
+}
+
+/**
+ * Issues a fresh confirmation link. Safe to call repeatedly — each call
+ * supersedes the previous token, so only the newest link works.
+ *
+ * Resolves silently for an unknown or already-verified user: this is reachable
+ * unauthenticated, and a distinct response would leak which addresses have
+ * accounts and which are confirmed.
+ */
+export async function requestEmailVerification(userId: string): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user || user.emailVerifiedAt) return
+
+  await prisma.emailVerificationToken.updateMany({
+    where: { userId: user.id, usedAt: null },
+    data: { usedAt: new Date() },
+  })
+
+  const token = generateToken(32)
+
+  await prisma.emailVerificationToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: hashToken(token),
+      expiresAt: new Date(
+        Date.now() + EMAIL_VERIFICATION_TTL_MINUTES * 60 * 1000
+      ),
+    },
+  })
+
+  await sendEmailVerificationEmail(user, token, EMAIL_VERIFICATION_TTL_MINUTES)
+}
+
+/** Resolves whether or not the address exists — same reasoning as reset. */
+export async function requestEmailVerificationByEmail(
+  email: string
+): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  })
+  if (!user) return
+
+  await requestEmailVerification(user.id)
+}
+
+export async function verifyEmail(token: string): Promise<PublicUser> {
+  const record = await prisma.emailVerificationToken.findUnique({
+    where: { tokenHash: hashToken(token) },
+    include: { user: true },
+  })
+
+  if (!record || record.usedAt || record.expiresAt < new Date()) {
+    throw new ValidationError(
+      "That confirmation link is invalid or has expired. Request a new one."
+    )
+  }
+
+  // Already confirmed by an earlier link: burn this token and succeed anyway,
+  // so clicking a stale email is not an error the user has to interpret.
+  if (record.user.emailVerifiedAt) {
+    await prisma.emailVerificationToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    })
+    return toPublicUser(record.user)
+  }
+
+  const [user] = await prisma.$transaction([
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { emailVerifiedAt: new Date() },
+    }),
+    prisma.emailVerificationToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    }),
+  ])
+
   return toPublicUser(user)
 }
 
@@ -144,6 +237,59 @@ export async function recordLogin(
     where: { id: userId },
     data: { lastLoginAt: new Date(), lastLoginIp: ip ?? null },
   })
+}
+
+/**
+ * Emails the user when a sign-in comes from a device we have not seen on their
+ * account before.
+ *
+ * Two rules keep this useful rather than noisy:
+ *
+ *  - **Silent on the first ever session.** With no history there is nothing to
+ *    compare against, and "you signed in" is not news to someone who just
+ *    signed in for the first time. This also spares the 49 migrated accounts an
+ *    alert on their first visit to the new platform.
+ *  - **Compares the described device, not the raw agent.** Raw UA strings
+ *    change on every browser update, so matching on them would alert roughly
+ *    monthly per user until they stopped reading these emails.
+ *
+ * The lookup must be awaited and must complete BEFORE the new session row is
+ * written, or the current login matches itself and nothing ever alerts. Only
+ * the send is fire-and-forget — a mail outage must not fail a valid sign-in.
+ *
+ * @returns Whether an alert was dispatched. The caller ignores it; it exists so
+ *   the decision can be tested without mocking the mail layer, which ESM makes
+ *   awkward and which would test the mock rather than the rule.
+ */
+export async function notifyIfNewDevice(
+  user: User,
+  context: { userAgent?: string | undefined; ip?: string | undefined }
+): Promise<boolean> {
+  const device = describeDevice(context.userAgent)
+
+  const previous = await prisma.refreshSession.findMany({
+    where: { userId: user.id },
+    select: { userAgent: true },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  })
+
+  if (previous.length === 0) return false
+
+  const known = new Set(
+    previous.map((session) => describeDevice(session.userAgent) ?? "unknown")
+  )
+
+  if (known.has(device ?? "unknown")) return false
+
+  void sendLoginAlertEmail(user, {
+    ipAddress: context.ip ?? null,
+    device,
+  }).catch((error: unknown) => {
+    logger.error({ err: error, userId: user.id }, "Login alert email failed")
+  })
+
+  return true
 }
 
 /**

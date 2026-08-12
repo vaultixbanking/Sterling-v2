@@ -68,6 +68,18 @@ export const auth = {
       body: { token, password },
     }),
 
+  verifyEmail: (token: string) =>
+    request<{ user: PublicUser; message: string }>("/auth/verify-email", {
+      method: "POST",
+      body: { token },
+    }),
+
+  resendVerification: (email: string) =>
+    request<{ message: string }>("/auth/resend-verification", {
+      method: "POST",
+      body: { email },
+    }),
+
   me: () => request<{ user: PublicUser }>("/auth/me"),
 }
 

@@ -13,7 +13,9 @@ import {
   forgotPasswordSchema,
   loginSchema,
   registerSchema,
+  resendVerificationSchema,
   resetPasswordSchema,
+  verifyEmailSchema,
 } from "./auth.schema.js"
 
 export const authRouter: Router = Router()
@@ -54,6 +56,23 @@ authRouter.post(
   passwordResetLimiter,
   validate({ body: resetPasswordSchema }),
   asyncHandler(controller.resetPassword)
+)
+
+// Unauthenticated by design: the link is opened from an inbox, often in a
+// browser with no session — requiring one would make confirming impossible for
+// exactly the people who need to.
+authRouter.post(
+  "/verify-email",
+  passwordResetLimiter,
+  validate({ body: verifyEmailSchema }),
+  asyncHandler(controller.verifyEmail)
+)
+
+authRouter.post(
+  "/resend-verification",
+  passwordResetLimiter,
+  validate({ body: resendVerificationSchema }),
+  asyncHandler(controller.resendVerification)
 )
 
 authRouter.get("/me", authenticate, asyncHandler(controller.me))

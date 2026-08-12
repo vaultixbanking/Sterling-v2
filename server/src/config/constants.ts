@@ -19,6 +19,14 @@ export const UPLOAD_ALLOWED_MIME = [
 /** Password-reset token lifetime. */
 export const RESET_TOKEN_TTL_MINUTES = 30
 
+/**
+ * Email-verification token lifetime. Far longer than a reset token: a reset is
+ * a live credential and should expire fast, whereas a confirmation link is
+ * often opened on a different device hours later, and an expired one just
+ * means an avoidable "resend" round trip.
+ */
+export const EMAIL_VERIFICATION_TTL_MINUTES = 24 * 60
+
 /** Withdrawal PIN rules. */
 export const PIN_ALLOWED_LENGTHS = [4, 6] as const
 export const PIN_MAX_TTL_MINUTES = 60 * 24 * 7 // 7 days — SwiftEdge had no cap
