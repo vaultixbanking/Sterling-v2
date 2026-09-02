@@ -117,6 +117,9 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
   /** Emailing the PIN is opt-in per issue, so a routine one never goes out to a
       stale address by default and the admin makes the call each time. */
   const [pinNotify, setPinNotify] = useState(false)
+  /** Storing a readable copy of the PIN is opt-in too — without this the bcrypt
+      hash stays the only copy that exists anywhere. */
+  const [pinShare, setPinShare] = useState(false)
   const [issued, setIssued] = useState<IssuedPin | null>(null)
 
   const [holdingOpen, setHoldingOpen] = useState(false)
@@ -229,6 +232,7 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
         length: pinLength,
         ttlMinutes: 1440,
         notifyUser: pinNotify,
+        shareLink: pinShare,
       })
       // Shown once, here. Never logged — SwiftEdge printed issued PINs to the
       // browser console, where they persisted in the devtools history.
@@ -356,6 +360,7 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
               variant="outline"
               onClick={() => {
                 setPinNotify(false)
+                setPinShare(false)
                 setPinOpen(true)
               }}
             >
@@ -695,6 +700,23 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
             </span>
           </span>
         </label>
+        <label className="mt-2 flex cursor-pointer items-start gap-2.5 rounded-lg bg-secondary-50 p-3">
+          <input
+            type="checkbox"
+            checked={pinShare}
+            disabled={pinBusy}
+            onChange={(event) => setPinShare(event.target.checked)}
+            className="mt-0.5 size-4 rounded border-secondary-300"
+          />
+          <span className="text-sm text-secondary-700">
+            Also create a one-time link
+            <span className="mt-0.5 block text-xs text-secondary-500">
+              {pinShare
+                ? "Safer than pasting the PIN into a chat: the link reveals it once and then dies, so the PIN never sits in the conversation history."
+                : "No link. The PIN stays unrecoverable — only its hash is stored."}
+            </span>
+          </span>
+        </label>
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -717,6 +739,22 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
             <p className="mt-2 text-xs text-secondary-600">
               For {issued.user.fullName} · expires{" "}
               {formatDateTime(issued.expiresAt)}
+            </p>
+          </div>
+        )}
+        {issued?.shareUrl && (
+          <div className="mt-3 rounded-xl border border-secondary-200 bg-secondary-50 p-3">
+            <p className="text-xs text-secondary-600">
+              One-time link — send this instead of the PIN
+            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-secondary-800">
+                {issued.shareUrl}
+              </span>
+              <CopyButton value={issued.shareUrl} label="Copy the PIN link" />
+            </div>
+            <p className="mt-1.5 text-xs text-secondary-500">
+              Reveals the PIN once, then stops working.
             </p>
           </div>
         )}

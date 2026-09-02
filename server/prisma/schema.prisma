@@ -363,6 +363,17 @@ model WithdrawalPin {
   expiresAt DateTime
   usedAt    DateTime?
 
+  /// One-time share link. All three are null unless the admin explicitly asked
+  /// for a link when issuing, so a PIN that is only ever relayed by hand leaves
+  /// nothing readable behind — `pinHash` stays the only copy, as before.
+  ///
+  /// `pinCipher` is the PIN under AES-256-GCM. It is destroyed the moment the
+  /// link is opened, so a database that leaks later gives up nothing about any
+  /// PIN that was actually delivered.
+  shareToken String?   @unique
+  pinCipher  String?
+  revealedAt DateTime?
+
   issuedById String?
   issuedBy   User?   @relation("PinIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
 

@@ -9,6 +9,7 @@ import {
 import { Router } from "express"
 import { z } from "zod"
 
+import { env } from "../../config/env.js"
 import {
   ADJUSTABLE_CATEGORIES,
   PIN_ALLOWED_LENGTHS,
@@ -387,6 +388,7 @@ adminRouter.post(
         .max(PIN_MAX_TTL_MINUTES)
         .default(PIN_DEFAULT_TTL_MINUTES),
       notifyUser: z.boolean().default(true),
+      shareLink: z.boolean().default(false),
     }),
   }),
   asyncHandler(async (req, res) => {
@@ -403,6 +405,7 @@ adminRouter.post(
       issuedById: req.auth!.userId,
       length: req.body.length,
       ttlMinutes: req.body.ttlMinutes,
+      shareLink: req.body.shareLink,
     })
 
     await recordAudit({
@@ -430,6 +433,11 @@ adminRouter.post(
       pin: issued.pin,
       expiresAt: issued.expiresAt,
       user: { uid: user.uid, fullName: user.fullName },
+      ...(issued.shareToken
+        ? {
+            shareUrl: `${env.APP_URL.replace(/\/$/, "")}/pin/${issued.shareToken}`,
+          }
+        : {}),
     })
   })
 )

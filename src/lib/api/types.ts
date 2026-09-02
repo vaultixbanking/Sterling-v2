@@ -405,6 +405,19 @@ export interface IssuedPin {
   pin: string
   expiresAt: string
   user: { uid: string; fullName: string }
+  /** Present only when a one-time link was requested at issue time. */
+  shareUrl?: string
+}
+
+/**
+ * What a PIN link discloses before it is spent. Deliberately no PIN: this is
+ * the shape a chat app's link-preview crawler receives, and revealing on a
+ * plain fetch would burn the link before the recipient ever opened it.
+ */
+export interface PinShare {
+  state: "READY" | "REVEALED" | "EXPIRED"
+  fullName: string
+  expiresAt: string
 }
 
 export interface BankConfig extends BankAccountDetails {

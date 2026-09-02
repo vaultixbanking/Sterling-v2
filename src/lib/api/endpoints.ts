@@ -22,6 +22,7 @@ import type {
   PerformanceSeries,
   Plan,
   PlanInput,
+  PinShare,
   PublicReceipt,
   ReceiptLink,
   PortfolioSummary,
@@ -324,7 +325,12 @@ export const admin = {
   /** The raw PIN comes back exactly once — it is never retrievable again. */
   issuePin: (
     uid: string,
-    input: { length: 4 | 6; ttlMinutes: number; notifyUser: boolean }
+    input: {
+      length: 4 | 6
+      ttlMinutes: number
+      notifyUser: boolean
+      shareLink?: boolean
+    }
   ) =>
     request<IssuedPin>(`/admin/users/${uid}/pins`, {
       method: "POST",
@@ -404,6 +410,18 @@ export const admin = {
 export const receipts = {
   get: (token: string) =>
     request<{ receipt: PublicReceipt }>(`/receipts/${token}`),
+}
+
+/**
+ * Public, and split in two on purpose: reading the link never returns the PIN,
+ * so a chat app's preview crawler cannot spend it. Only `reveal` does, and only
+ * once.
+ */
+export const pinLinks = {
+  get: (token: string) => request<{ share: PinShare }>(`/pin-links/${token}`),
+
+  reveal: (token: string) =>
+    request<{ pin: string }>(`/pin-links/${token}/reveal`, { method: "POST" }),
 }
 
 export const health = () =>

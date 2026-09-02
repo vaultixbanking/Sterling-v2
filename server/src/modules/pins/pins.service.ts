@@ -4,9 +4,15 @@ import {
   PIN_ALLOWED_LENGTHS,
   PIN_MAX_TTL_MINUTES,
 } from "../../config/constants.js"
-import { generateNumericPin, hashPassword, verifyPassword } from "../../lib/crypto.js"
-import { InvalidPinError, ValidationError } from "../../lib/errors.js"
+import {
+  generateNumericPin,
+  generateToken,
+  hashPassword,
+  verifyPassword,
+} from "../../lib/crypto.js"
+import { InvalidPinError, NotFoundError, ValidationError } from "../../lib/errors.js"
 import { prisma } from "../../lib/prisma.js"
+import { openSecret, sealSecret } from "../../lib/secret-box.js"
 
 /**
  * Withdrawal PINs.
@@ -28,6 +34,8 @@ export interface IssuedPin {
   /** Raw PIN — returned exactly once, to the issuing admin. */
   pin: string
   expiresAt: Date
+  /** Present only when a one-time link was requested at issue time. */
+  shareToken?: string
 }
 
 export async function issuePin(params: {
@@ -35,6 +43,13 @@ export async function issuePin(params: {
   issuedById: string
   length: number
   ttlMinutes: number
+  /**
+   * Store an encrypted copy behind a one-time link. Off by default and opt-in
+   * per issue: without it the bcrypt hash remains the only copy of the PIN
+   * anywhere, which is the property worth keeping for every PIN that is simply
+   * read out over the phone.
+   */
+  shareLink?: boolean
 }): Promise<IssuedPin> {
   if (!PIN_ALLOWED_LENGTHS.includes(params.length as never)) {
     throw new ValidationError(
@@ -64,11 +79,97 @@ export async function issuePin(params: {
         pinHash: await hashPassword(pin),
         issuedById: params.issuedById,
         expiresAt,
+        ...(params.shareLink
+          ? { shareToken: generateToken(24), pinCipher: sealSecret(pin) }
+          : {}),
       },
     })
   })
 
-  return { id: record.id, pin, expiresAt }
+  return {
+    id: record.id,
+    pin,
+    expiresAt,
+    ...(record.shareToken ? { shareToken: record.shareToken } : {}),
+  }
+}
+
+/* ------------------------------------------------------- one-time PIN link */
+
+export type ShareState = "READY" | "REVEALED" | "EXPIRED"
+
+export interface PinShareView {
+  state: ShareState
+  fullName: string
+  expiresAt: Date
+}
+
+function stateOf(pin: {
+  status: PinStatus
+  expiresAt: Date
+  revealedAt: Date | null
+  pinCipher: string | null
+}): ShareState {
+  if (pin.revealedAt || !pin.pinCipher) return "REVEALED"
+  if (pin.status !== PinStatus.ACTIVE || pin.expiresAt <= new Date()) {
+    return "EXPIRED"
+  }
+  return "READY"
+}
+
+/**
+ * What the link shows before anyone taps Reveal.
+ *
+ * This is the half a chat app's link-preview crawler fetches, so it must not
+ * contain the PIN and must not consume anything. A one-time link that burned on
+ * GET would be spent by WhatsApp's fetcher before the recipient ever saw it.
+ */
+export async function viewPinShare(token: string): Promise<PinShareView> {
+  const pin = await prisma.withdrawalPin.findUnique({
+    where: { shareToken: token },
+    include: { user: { select: { fullName: true } } },
+  })
+  if (!pin) throw new NotFoundError("Link")
+
+  return {
+    state: stateOf(pin),
+    fullName: pin.user.fullName,
+    expiresAt: pin.expiresAt,
+  }
+}
+
+/**
+ * Spends the link and returns the PIN.
+ *
+ * The stored ciphertext is cleared in the same update that stamps `revealedAt`,
+ * conditioned on it still being unrevealed — so two taps racing each other
+ * produce exactly one winner, and a database read after the fact recovers
+ * nothing about a PIN that was actually delivered.
+ */
+export async function revealPinShare(token: string): Promise<string> {
+  const pin = await prisma.withdrawalPin.findUnique({
+    where: { shareToken: token },
+  })
+  if (!pin) throw new NotFoundError("Link")
+
+  if (stateOf(pin) !== "READY" || !pin.pinCipher) {
+    throw new ValidationError("This link has already been used or has expired.")
+  }
+
+  const claimed = await prisma.withdrawalPin.updateMany({
+    where: { id: pin.id, revealedAt: null, pinCipher: { not: null } },
+    data: { revealedAt: new Date(), pinCipher: null },
+  })
+  if (claimed.count !== 1) {
+    throw new ValidationError("This link has already been used or has expired.")
+  }
+
+  const value = openSecret(pin.pinCipher)
+  if (!value) {
+    throw new ValidationError("This link has already been used or has expired.")
+  }
+
+  return value
 }
 
 /**
