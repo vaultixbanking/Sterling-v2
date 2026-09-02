@@ -11,11 +11,46 @@ import { company } from "@/lib/site"
  * the only thing protecting it — and it renders entirely on the server so that
  * forwarding the link to an accountant or a bank produces something readable
  * without JavaScript.
+ *
+ * The card a chat app draws for this link is its own metadata, not the site's.
+ * Falling through to the root's marketing title made a receipt arrive looking
+ * like an advert for the brokerage, which is the opposite of what someone
+ * sending proof of payment needs it to say.
+ *
+ * The reference goes in the title; the amount and the client's name do not. A
+ * preview is fetched by the chat provider and then shown to everyone in the
+ * conversation and everyone it is forwarded to, without anybody tapping — so
+ * the figures stay behind the tap, where the unguessable token already guards
+ * them.
  */
-export const metadata: Metadata = {
-  title: "Receipt",
-  description: "Transaction receipt.",
-  robots: { index: false, follow: false, nocache: true },
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>
+}): Promise<Metadata> {
+  const { token } = await params
+  const receipt = await loadReceipt(token)
+
+  const title = receipt
+    ? `Payment receipt · ${receipt.reference}`
+    : "Payment receipt"
+
+  const description = receipt
+    ? `Official confirmation of a completed transaction, issued by ${company.name}.`
+    : "This receipt is no longer available."
+
+  return {
+    title,
+    description,
+    robots: { index: false, follow: false, nocache: true },
+    openGraph: {
+      title,
+      description,
+      type: "article",
+      siteName: company.name,
+    },
+    twitter: { card: "summary_large_image", title, description },
+  }
 }
 
 /**

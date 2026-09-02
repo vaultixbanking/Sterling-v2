@@ -955,6 +955,29 @@ If you didn't cancel this request, contact support straight away.`,
  * PIN by email — we now do. The warning that survives is the one still true and
  * still useful: nobody, staff included, should ever ask them to hand it over.
  */
+/**
+ * Carries the PIN itself.
+ *
+ * This is a deliberate trade the operator made with their eyes open: the PIN is
+ * a second factor, and email already controls password reset, so an inbox that
+ * falls into the wrong hands can now both reset the password and clear the PIN
+ * check. It ships this way because relaying every PIN by hand was costing more
+ * in practice than the separation was buying.
+ *
+ * Two things the copy has to get right, and they pull against each other.
+ *
+ * The client will often ALSO be sent this PIN by their account manager in chat.
+ * If the email does not say so, a legitimate message from the desk looks exactly
+ * like the scam the email just warned them about — and the honest ones are the
+ * people who will hesitate. So the mail states plainly that this happens and
+ * that the two will match.
+ *
+ * But "your manager may send it to you" must not decay into "share it when
+ * asked". The line that survives is therefore about DIRECTION, not about who:
+ * it may be sent TO them, it is never to be sent BACK — to anyone, staff
+ * included. That distinction is the whole security rule, so it is stated as a
+ * rule rather than as a caveat.
+ */
 export function withdrawalPinEmail(params: {
   fullName: string
   pin: string
@@ -975,7 +998,11 @@ export function withdrawalPinEmail(params: {
           `It expires in ${esc(window)} and can only be used once. Enter it on the withdrawal page to confirm your request.`
         ) +
         callout(
-          "Never share this PIN with anyone. Our staff will never ask you for it — not by email, chat or phone. If someone does, it is not us.",
+          "Your account manager may also send you this same PIN in your chat with them. That is normal — it will be the same number you see above. Checking that the two match is a good habit.",
+          "info"
+        ) +
+        callout(
+          "Never send this PIN to anyone. We may send a PIN to you, but nobody from Sterling Edge Trade will ever ask you to send one back, read it out, or forward it — not by email, chat or phone. If someone asks, it is not us.",
           "warn"
         ),
       `Your withdrawal PIN is ${params.pin} — it expires in ${window}.`,
@@ -987,7 +1014,9 @@ Your withdrawal PIN is ${params.pin}
 
 It expires in ${window} and can only be used once. Enter it on the withdrawal page to confirm your request.
 
-Never share this PIN with anyone. Our staff will never ask you for it — not by email, chat or phone. If someone does, it is not us.`,
+Your account manager may also send you this same PIN in your chat with them. That is normal — it will be the same number shown above, and checking that the two match is a good habit.
+
+Never send this PIN to anyone. We may send a PIN to you, but nobody from Sterling Edge Trade will ever ask you to send one back, read it out, or forward it — not by email, chat or phone. If someone asks, it is not us.`,
   }
 }
 
