@@ -53,16 +53,23 @@ export function Sidebar({
         </Link>
       </div>
 
+      {/*
+        A label, not a button. It used to be a solid `bg-primary-600` chip —
+        the exact treatment the active nav item uses — so the sidebar showed
+        two identical blue blocks and the filled one that meant "you are here"
+        no longer stood out. Filled primary is reserved for the active page;
+        this states which panel you are in and then gets out of the way.
+      */}
       {isAdmin && (
         <div
           className={cn(
-            "mx-3 mt-3 flex items-center gap-2 rounded-lg bg-primary-600 px-3 py-2 text-white",
-            collapsed && "mx-2 justify-center px-2"
+            "mt-4 mb-1 flex items-center gap-2 text-secondary-500",
+            collapsed ? "justify-center px-2" : "px-6"
           )}
         >
           <ShieldCheck className="size-4 shrink-0" />
           {!collapsed && (
-            <span className="text-xs font-semibold tracking-wide uppercase">
+            <span className="text-[11px] font-semibold tracking-[0.14em] uppercase">
               Admin panel
             </span>
           )}
