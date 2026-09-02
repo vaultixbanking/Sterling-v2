@@ -23,7 +23,13 @@ export function CopyButton({
   /** Accessible name — say what is being copied, e.g. "Copy wallet address". */
   label?: string
   className?: string
-  variant?: "icon" | "inline"
+  /**
+   * `block` is a full-width labelled button. It exists for the one-time PIN
+   * page, where the whole point is that nobody should have to memorise the
+   * number — an icon beside it is easy to miss on a phone, and the people most
+   * likely to miss it are the ones least likely to go hunting.
+   */
+  variant?: "icon" | "inline" | "block"
 }) {
   const [copied, setCopied] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -66,15 +72,25 @@ export function CopyButton({
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 rounded-lg font-medium transition-colors",
         "focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:outline-none",
-        copied
-          ? "text-emerald-600"
-          : "text-secondary-400 hover:text-primary-600",
-        variant === "icon" ? "p-1.5" : "px-2 py-1 text-xs",
+        variant === "block"
+          ? cn(
+              "w-full justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold",
+              copied
+                ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                : "bg-primary-600 text-white shadow-sm hover:bg-primary-700"
+            )
+          : cn(
+              copied
+                ? "text-emerald-600"
+                : "text-secondary-400 hover:text-primary-600",
+              variant === "icon" ? "p-1.5" : "px-2 py-1 text-xs"
+            ),
         className
       )}
     >
       <Icon className="size-4" />
       {variant === "inline" && <span>{copied ? "Copied" : "Copy"}</span>}
+      {variant === "block" && <span>{copied ? "Copied" : label}</span>}
       {variant === "icon" && (
         <span aria-live="polite" className="sr-only">
           {copied ? "Copied to clipboard" : ""}

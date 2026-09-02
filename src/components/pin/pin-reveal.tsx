@@ -66,13 +66,19 @@ export function PinReveal({
                   Hi {first}, here is your PIN. It will not be shown again.
                 </p>
                 <div className="mt-4 rounded-xl border-2 border-amber-200 bg-amber-50 p-5 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="font-mono text-3xl font-bold tracking-[0.3em] text-secondary-900">
-                      {pin}
-                    </span>
-                    <CopyButton value={pin} label="Copy your PIN" />
-                  </div>
+                  <span className="font-mono text-4xl font-bold tracking-[0.28em] text-secondary-900">
+                    {pin}
+                  </span>
                 </div>
+                {/* Full-width and labelled rather than an icon: the entire
+                    point of this page is that nobody has to memorise the
+                    number, and on a phone an icon beside it is easy to miss. */}
+                <CopyButton
+                  value={pin}
+                  label="Copy PIN"
+                  variant="block"
+                  className="mt-3"
+                />
                 <p className="mt-4 text-xs leading-relaxed text-secondary-500">
                   Enter it on the withdrawal page to confirm your request. It can
                   only be used once.
