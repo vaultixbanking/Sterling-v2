@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/components/providers/auth-provider"
 import { useToast } from "@/components/ui/toast"
 import { initials } from "@/lib/format"
+import { CopyButton } from "@/components/ui/copy-button"
 import { cn } from "@/lib/utils"
 
 /**
@@ -128,6 +129,27 @@ export function Topbar({
                 <p className="truncate text-xs text-secondary-500">
                   {user?.email ?? ""}
                 </p>
+                {/*
+                  The trigger shows the UID but cannot offer a copy button — it
+                  is itself a button, and nesting one inside breaks both. Here
+                  there is room for it, and this menu is reachable from every
+                  page, including mobile where the trigger's text is hidden.
+                */}
+                {user?.uid && (
+                  <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-secondary-50 py-1 pr-1 pl-2">
+                    <span className="text-[11px] text-secondary-500">
+                      Account ID
+                    </span>
+                    <span className="font-mono text-xs font-semibold text-secondary-900 tabular">
+                      {user.uid}
+                    </span>
+                    <CopyButton
+                      value={user.uid}
+                      label="Copy your account ID"
+                      className="ml-auto"
+                    />
+                  </div>
+                )}
               </div>
 
               <DropdownMenu.Item asChild>

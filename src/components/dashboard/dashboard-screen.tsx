@@ -20,6 +20,7 @@ import { PageHeader } from "@/components/app/page-header"
 import { StatCard } from "@/components/app/stat-card"
 import { StatusBadge } from "@/components/app/status-badge"
 import { Button } from "@/components/ui/button"
+import { CopyButton } from "@/components/ui/copy-button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/components/providers/auth-provider"
 import * as api from "@/lib/api/endpoints"
@@ -79,6 +80,25 @@ export function DashboardScreen() {
           </>
         }
       />
+
+      {/*
+        Support asks for this on every ticket, and it lived only in Settings and
+        in the registration email — so people were hunting for it mid-conversation
+        or giving their email address instead. It sits above the balances because
+        it is reference information, not a metric: quiet, always in the same
+        place, one tap to copy.
+      */}
+      {user?.uid && (
+        <div className="mb-5 inline-flex items-center gap-2.5 rounded-xl border border-secondary-200/70 bg-white py-2 pr-2 pl-3.5 shadow-sm">
+          <span className="text-xs font-medium text-secondary-500">
+            Account ID
+          </span>
+          <span className="font-mono text-sm font-semibold tracking-wide text-secondary-900 tabular">
+            {user.uid}
+          </span>
+          <CopyButton value={user.uid} label="Copy your account ID" />
+        </div>
+      )}
 
       {portfolio.error && !summary ? (
         <ErrorState
