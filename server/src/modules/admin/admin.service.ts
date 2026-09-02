@@ -57,7 +57,14 @@ export async function listUsers(params: {
             { email: { contains: search, mode: "insensitive" } },
             { username: { contains: search, mode: "insensitive" } },
             { fullName: { contains: search, mode: "insensitive" } },
-            { uid: { equals: search.toUpperCase() } },
+            // Was `equals: search.toUpperCase()`. Uppercasing suited UIDs this
+            // system generates, which are uppercase by construction — but the
+            // accounts carried over from the old platform have lowercase hex
+            // UIDs like "3e1b9959", and uppercasing made them permanently
+            // unfindable. `equals` also meant a partial UID matched nothing,
+            // which is how an admin actually types one they are reading off a
+            // support message.
+            { uid: { contains: search, mode: "insensitive" } },
           ],
         }
       : {}),

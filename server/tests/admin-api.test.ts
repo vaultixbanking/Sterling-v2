@@ -402,4 +402,62 @@ describe.skipIf(!hasDatabase)("admin API", () => {
     await as(admin, "get", "/admin/subscriptions").expect(200)
     await as(user, "get", "/admin/subscriptions").expect(403)
   })
+
+  /* --------------------------------------------------------- user search */
+
+  describe("user search", () => {
+    /**
+     * The UID search used to uppercase the term before an exact match. Every
+     * account migrated from the old platform has a lowercase hex uid, so those
+     * users — the entire existing customer base — could not be found by the one
+     * identifier support is given over the phone.
+     */
+    it("finds a lowercase legacy-style uid", async () => {
+      const legacy = await testPrisma.user.create({
+        data: {
+          uid: "3e1b9959",
+          email: `legacy-${Date.now()}@example.test`,
+          username: `legacy_${Date.now()}`.slice(0, 20),
+          fullName: "Legacy Account",
+          passwordHash: "x",
+        },
+      })
+
+      const response = await as(admin, "get", "/admin/users")
+        .query({ search: "3e1b9959" })
+        .expect(200)
+
+      expect(
+        response.body.data.items.some(
+          (row: { uid: string }) => row.uid === legacy.uid
+        )
+      ).toBe(true)
+    })
+
+    it("finds a uid whatever case the admin types", async () => {
+      const response = await as(admin, "get", "/admin/users")
+        .query({ search: "3E1B9959" })
+        .expect(200)
+
+      expect(
+        response.body.data.items.some(
+          (row: { uid: string }) => row.uid === "3e1b9959"
+        )
+      ).toBe(true)
+    })
+
+    /** Admins type the fragment they can see, not the whole reference. */
+    it("matches on part of a uid", async () => {
+      const response = await as(admin, "get", "/admin/users")
+        .query({ search: "1b9959" })
+        .expect(200)
+
+      expect(
+        response.body.data.items.some(
+          (row: { uid: string }) => row.uid === "3e1b9959"
+        )
+      ).toBe(true)
+    })
+  })
+
 })
