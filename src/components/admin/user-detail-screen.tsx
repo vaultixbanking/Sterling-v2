@@ -114,6 +114,9 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
   const [pinOpen, setPinOpen] = useState(false)
   const [pinLength, setPinLength] = useState<4 | 6>(6)
   const [pinBusy, setPinBusy] = useState(false)
+  /** Emailing the PIN is opt-in per issue, so a routine one never goes out to a
+      stale address by default and the admin makes the call each time. */
+  const [pinNotify, setPinNotify] = useState(false)
   const [issued, setIssued] = useState<IssuedPin | null>(null)
 
   const [holdingOpen, setHoldingOpen] = useState(false)
@@ -225,7 +228,7 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
       const result = await api.admin.issuePin(uid, {
         length: pinLength,
         ttlMinutes: 1440,
-        notifyUser: false,
+        notifyUser: pinNotify,
       })
       // Shown once, here. Never logged — SwiftEdge printed issued PINs to the
       // browser console, where they persisted in the devtools history.
@@ -348,7 +351,14 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
               <MinusCircle className="size-4" />
               Debit
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setPinOpen(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setPinNotify(false)
+                setPinOpen(true)
+              }}
+            >
               <KeyRound className="size-4" />
               Issue PIN
             </Button>
@@ -668,6 +678,23 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
           </div>
           <p className="mt-2 text-xs text-secondary-500">Valid for 24 hours.</p>
         </fieldset>
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg bg-secondary-50 p-3">
+          <input
+            type="checkbox"
+            checked={pinNotify}
+            disabled={pinBusy}
+            onChange={(event) => setPinNotify(event.target.checked)}
+            className="mt-0.5 size-4 rounded border-secondary-300"
+          />
+          <span className="text-sm text-secondary-700">
+            Email the PIN to the user
+            <span className="mt-0.5 block text-xs text-secondary-500">
+              {pinNotify
+                ? "They get the PIN itself, straight away. Anyone with access to their inbox gets it too — so use a trusted channel instead where you have one."
+                : "Nothing is sent. You relay the PIN yourself through a channel you trust."}
+            </span>
+          </span>
+        </label>
       </ConfirmDialog>
 
       <ConfirmDialog

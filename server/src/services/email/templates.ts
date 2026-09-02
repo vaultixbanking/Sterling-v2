@@ -347,6 +347,41 @@ function amountHero(amount: string, caption: string, tone: Tone = "brand"): stri
 }
 
 /**
+ * A one-time code, sized to be read off a phone and typed into another screen.
+ *
+ * Wide letter-spacing and a monospace face because the reader is transcribing
+ * character by character, and 0/O and 1/l are the pairs that get mistyped.
+ */
+/**
+ * "90 minutes" is how a config value reads; "an hour and a half" is how a
+ * person reads it. The PIN window is quoted to someone under mild time
+ * pressure, so it is spelled the way they would say it out loud.
+ */
+function describeMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`
+
+  const hours = minutes / 60
+  if (Number.isInteger(hours)) {
+    return `${hours} hour${hours === 1 ? "" : "s"}`
+  }
+
+  const whole = Math.floor(hours)
+  const rest = minutes - whole * 60
+  return `${whole} hour${whole === 1 ? "" : "s"} ${rest} minutes`
+}
+
+function codeHero(code: string, caption: string): string {
+  const { accent, soft, softBorder } = TONES.warn
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 22px;background:${soft};border:1px solid ${softBorder};border-radius:14px;">
+    <tr><td align="center" style="padding:24px 20px;">
+      <p style="margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:0.11em;text-transform:uppercase;color:${accent};">${esc(caption)}</p>
+      <p style="margin:0;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:34px;line-height:1.1;font-weight:700;letter-spacing:10px;text-indent:10px;color:${INK};">${esc(code)}</p>
+    </td></tr>
+  </table>`
+}
+
+/**
  * Data rows. Escapes both columns — pass plain text, never markup.
  *
  * @param title Optional header strip, so a panel reads as a labelled block
@@ -907,36 +942,52 @@ If you didn't cancel this request, contact support straight away.`,
   }
 }
 
+/**
+ * Carries the PIN itself.
+ *
+ * This is a deliberate trade the operator made with their eyes open: the PIN is
+ * a second factor, and email already controls password reset, so an inbox that
+ * falls into the wrong hands can now both reset the password and clear the PIN
+ * check. It ships this way because relaying every PIN by hand was costing more
+ * in practice than the separation was buying.
+ *
+ * What the copy must therefore NOT say is the old line about never sending a
+ * PIN by email — we now do. The warning that survives is the one still true and
+ * still useful: nobody, staff included, should ever ask them to hand it over.
+ */
 export function withdrawalPinEmail(params: {
   fullName: string
+  pin: string
   expiresInMinutes: number
 }): Email {
   const first = firstNameOf(params.fullName)
+  const window = describeMinutes(params.expiresInMinutes)
 
   return {
-    subject: "Your withdrawal PIN is ready",
+    subject: "Your withdrawal PIN",
     html: layout(
-      "Your withdrawal PIN is ready",
+      "Your withdrawal PIN",
       paragraph(
-        `Hi ${esc(first)}, a withdrawal PIN has been issued for your account. Your account manager will provide it to you directly.`
+        `Hi ${esc(first)}, here is the PIN for the withdrawal you are making.`
       ) +
+        codeHero(params.pin, "Your withdrawal PIN") +
         paragraph(
-          `The PIN expires in ${params.expiresInMinutes} minutes and can only be used once.`
+          `It expires in ${esc(window)} and can only be used once. Enter it on the withdrawal page to confirm your request.`
         ) +
         callout(
-          "We will never ask for your PIN by email, chat or phone. Only ever enter it on the withdrawal page.",
+          "Never share this PIN with anyone. Our staff will never ask you for it — not by email, chat or phone. If someone does, it is not us.",
           "warn"
         ),
-      `Your PIN is ready and expires in ${params.expiresInMinutes} minutes.`,
+      `Your withdrawal PIN is ${params.pin} — it expires in ${window}.`,
       { eyebrow: "Withdrawal security", tone: "warn" }
     ),
     text: `Hi ${first},
 
-A withdrawal PIN has been issued for your account. Your account manager will provide it to you directly.
+Your withdrawal PIN is ${params.pin}
 
-It expires in ${params.expiresInMinutes} minutes and can only be used once.
+It expires in ${window} and can only be used once. Enter it on the withdrawal page to confirm your request.
 
-We will never ask you for your PIN by email, chat or phone.`,
+Never share this PIN with anyone. Our staff will never ask you for it — not by email, chat or phone. If someone does, it is not us.`,
   }
 }
 

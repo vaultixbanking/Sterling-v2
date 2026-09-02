@@ -362,14 +362,21 @@ export function sendHoldingAddedEmail(
   )
 }
 
+/**
+ * The PIN travels in the email body, so this is the one send that must never be
+ * logged or retried into a different address. `send` already logs subject and
+ * recipient only, never the rendered body — keep it that way.
+ */
 export function sendWithdrawalPinEmail(
   user: User,
+  pin: string,
   expiresInMinutes: number
 ): Promise<void> {
   return send(
     user.email,
     templates.withdrawalPinEmail({
       fullName: user.fullName,
+      pin,
       expiresInMinutes,
     })
   )

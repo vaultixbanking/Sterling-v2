@@ -415,10 +415,14 @@ adminRouter.post(
       ip: clientIp(req),
     })
 
+    // The email now carries the PIN itself, so this is the user's copy rather
+    // than a heads-up that one exists. Still non-fatal: a bounced email must
+    // not fail the request, because the admin holds the PIN either way and
+    // relaying it by hand is the fallback.
     if (req.body.notifyUser) {
-      void sendWithdrawalPinEmail(user, req.body.ttlMinutes).catch(() => {
-        /* non-fatal — the admin relays the PIN directly */
-      })
+      void sendWithdrawalPinEmail(user, issued.pin, req.body.ttlMinutes).catch(
+        () => {}
+      )
     }
 
     // The raw PIN is returned exactly once, to the issuing admin.

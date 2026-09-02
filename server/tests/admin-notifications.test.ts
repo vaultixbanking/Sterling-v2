@@ -219,4 +219,42 @@ describe.skipIf(!hasDatabase)("admin notifications", () => {
 
     expect(mail.sendAccountDebitedEmail).not.toHaveBeenCalled()
   })
+
+  /* ------------------------------------------------- withdrawal PIN email */
+
+  describe("withdrawal PIN", () => {
+    it("does not email the PIN unless the admin asks", async () => {
+      const user = await createTestUser()
+
+      await as(admin, "post", `/admin/users/${user.uid}/pins`)
+        .send({ length: 6, ttlMinutes: 60, notifyUser: false })
+        .expect(201)
+
+      expect(mail.sendWithdrawalPinEmail).not.toHaveBeenCalled()
+    })
+
+    /**
+     * The PIN has to reach the send call. An email announcing that a PIN exists
+     * without carrying it is the behaviour this replaced, and it would look
+     * identical to a passing test that only counted calls.
+     */
+    it("emails the PIN itself when asked, and it matches the one issued", async () => {
+      const user = await createTestUser()
+
+      const response = await as(admin, "post", `/admin/users/${user.uid}/pins`)
+        .send({ length: 6, ttlMinutes: 60, notifyUser: true })
+        .expect(201)
+
+      const issuedPin = response.body.data.pin as string
+      expect(issuedPin).toMatch(/^\d{6}$/)
+
+      expect(mail.sendWithdrawalPinEmail).toHaveBeenCalledTimes(1)
+      const [recipient, pin, ttl] = vi.mocked(mail.sendWithdrawalPinEmail).mock
+        .calls[0]!
+      expect(recipient.email).toBe(user.email)
+      expect(pin).toBe(issuedPin)
+      expect(ttl).toBe(60)
+    })
+  })
+
 })
