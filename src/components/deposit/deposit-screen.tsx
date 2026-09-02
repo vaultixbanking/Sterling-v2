@@ -13,7 +13,6 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
-import { AccountIdChip } from "@/components/app/account-id-chip"
 import { EmptyState, ErrorState } from "@/components/app/empty-state"
 import { Money } from "@/components/app/money"
 import { PageHeader } from "@/components/app/page-header"
@@ -166,10 +165,6 @@ export function DepositScreen() {
         title="Deposit"
         description="Send your payment using the details below, then tell us about it."
       />
-
-      {/* The screen where it is most often needed: a manual transfer usually
-          has to carry this as its reference. */}
-      <AccountIdChip />
 
       {methods.error && !config ? (
         <ErrorState

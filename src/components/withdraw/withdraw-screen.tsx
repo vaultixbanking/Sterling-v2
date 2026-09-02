@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react"
 import { Banknote, Bitcoin, Lock, Wallet } from "lucide-react"
 
-import { AccountIdChip } from "@/components/app/account-id-chip"
 import { ConfirmDialog } from "@/components/app/confirm-dialog"
 import { EmptyState, ErrorState } from "@/components/app/empty-state"
 import { Money } from "@/components/app/money"
@@ -208,8 +207,6 @@ export function WithdrawScreen() {
         title="Withdraw"
         description="Move funds out of your account to a wallet or bank."
       />
-
-      <AccountIdChip />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-secondary-100/80 bg-white p-5 shadow-sm">

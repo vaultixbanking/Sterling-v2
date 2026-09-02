@@ -77,17 +77,13 @@ export function DashboardScreen() {
                 Withdraw
               </Link>
             </Button>
+            {/* In the action row rather than on a line of its own: support asks
+                for this on nearly every ticket, and it previously lived only in
+                Settings and an old registration email. */}
+            <AccountIdChip />
           </>
         }
       />
-
-      {/*
-        Support asks for this on nearly every ticket, and it lived only in
-        Settings and in a registration email from however long ago — so people
-        were reading out their email address instead. It sits above the balances
-        because it is reference information, not a metric.
-      */}
-      <AccountIdChip />
 
       {portfolio.error && !summary ? (
         <ErrorState
