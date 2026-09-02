@@ -39,3 +39,83 @@ export const MAX_PAGE_SIZE = 100
 /** Supported performance-chart windows. */
 export const PERFORMANCE_PERIODS = ["7d", "1m", "3m", "1y", "all"] as const
 export type PerformancePeriod = (typeof PERFORMANCE_PERIODS)[number]
+
+/**
+ * Usernames nobody may register.
+ *
+ * A customer called `support` or `sterling-security` can message other users
+ * from inside the product and be believed — the name does the phishing on its
+ * own. Blocking them costs a list; not blocking them costs a fraud case.
+ *
+ * Compared case-insensitively against the trimmed username, and applied to new
+ * signups only: the 49 accounts migrated from the old platform keep whatever
+ * they already have, because renaming someone's account out from under them is
+ * a worse outcome than an awkward legacy handle.
+ */
+export const RESERVED_USERNAMES: readonly string[] = [
+  "admin",
+  "administrator",
+  "root",
+  "superuser",
+  "sysadmin",
+  "moderator",
+  "mod",
+  "staff",
+  "team",
+  "official",
+  "support",
+  "help",
+  "helpdesk",
+  "customercare",
+  "customerservice",
+  "service",
+  "billing",
+  "payments",
+  "payment",
+  "finance",
+  "accounts",
+  "accounting",
+  "security",
+  "verify",
+  "verification",
+  "noreply",
+  "no_reply",
+  "info",
+  "contact",
+  "sterling",
+  "sterlingedge",
+  "sterlingedgetrade",
+  "sterlingsupport",
+  "edgetrade",
+  "system",
+  "api",
+  "bot",
+  "null",
+  "undefined",
+  "me",
+  "you",
+  "test",
+]
+
+/** How many alternatives the signup form offers when a username is taken. */
+export const USERNAME_SUGGESTION_COUNT = 5
+
+/**
+ * Categories an admin may write by hand from the adjustments endpoint.
+ *
+ * `WITHDRAWAL` and `PLAN_PRINCIPAL` are deliberately absent. Those are owned by
+ * the withdrawal and plan flows, which pair every row with a request or
+ * subscription record; a hand-written one would have no counterpart, so the
+ * queue and the ledger would disagree about what happened.
+ *
+ * Each direction is valid for all five: a credit records the thing, a debit
+ * reverses it. `sumCategory` nets the two, so a reversal moves the matching
+ * dashboard figure back down.
+ */
+export const ADJUSTABLE_CATEGORIES = [
+  "ADJUSTMENT",
+  "DEPOSIT",
+  "HOLDING",
+  "PROFIT",
+  "PLAN_PAYOUT",
+] as const

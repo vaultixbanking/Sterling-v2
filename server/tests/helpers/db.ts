@@ -21,9 +21,20 @@ export const testPrisma = hasDatabase
 
 let counter = 0
 
+/**
+ * `role` is returned as well as accepted: the HTTP harness signs a token from
+ * this object, and a token minted without the role is a `USER` token — which
+ * makes every admin request 403 for a reason that looks nothing like the cause.
+ */
 export async function createTestUser(
   overrides: { role?: Role } = {}
-): Promise<{ id: string; uid: string; email: string }> {
+): Promise<{
+  id: string
+  uid: string
+  email: string
+  username: string
+  role: Role
+}> {
   counter += 1
   const suffix = `${Date.now()}-${counter}`
 
@@ -38,7 +49,13 @@ export async function createTestUser(
     },
   })
 
-  return { id: user.id, uid: user.uid, email: user.email }
+  return {
+    id: user.id,
+    uid: user.uid,
+    email: user.email,
+    username: user.username,
+    role: user.role,
+  }
 }
 
 /** Removes only rows this suite created. */

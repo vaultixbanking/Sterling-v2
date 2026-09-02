@@ -31,6 +31,58 @@ import {
   humanise,
 } from "@/lib/format"
 import { useAsyncData } from "@/lib/use-async-data"
+import { cn } from "@/lib/utils"
+
+type Direction = "credit" | "debit"
+
+/**
+ * What an admin may write by hand — mirrors ADJUSTABLE_CATEGORIES on the API.
+ *
+ * Direction and category are two separate columns on the ledger. The button
+ * decides `type` (money in or out); this list decides `category` (the reason
+ * printed on the user's statement). Both directions are valid for every entry
+ * here — a credit records the thing, a debit reverses it — so each carries two
+ * labels. "Debit + Profit" reads as a contradiction until it is spelled out as
+ * "reverse a profit", which is exactly what it is.
+ */
+const CATEGORY_OPTIONS: ReadonlyArray<{
+  value: TxCategory
+  credit: string
+  debit: string
+  /** Dashboard figure this moves on top of the balance, if any. */
+  affects: string | null
+}> = [
+  {
+    value: "ADJUSTMENT",
+    credit: "Adjustment — balance only",
+    debit: "Correction — balance only",
+    affects: null,
+  },
+  {
+    value: "DEPOSIT",
+    credit: "Deposit",
+    debit: "Reverse a deposit",
+    affects: "Invested capital",
+  },
+  {
+    value: "HOLDING",
+    credit: "Holding value",
+    debit: "Reverse a holding credit",
+    affects: "Invested capital",
+  },
+  {
+    value: "PROFIT",
+    credit: "Profit",
+    debit: "Reverse a profit",
+    affects: "Profit earned",
+  },
+  {
+    value: "PLAN_PAYOUT",
+    credit: "Plan payout",
+    debit: "Reverse a plan payout",
+    affects: "Profit earned",
+  },
+]
 
 /**
  * Everything about one account, in one place.
@@ -43,10 +95,11 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
   const toast = useToast()
   const detail = useAsyncData(() => api.admin.user(uid), `admin-user:${uid}`)
 
-  const [adjustOpen, setAdjustOpen] = useState<"credit" | "debit" | null>(null)
+  const [adjustOpen, setAdjustOpen] = useState<Direction | null>(null)
   const [amount, setAmount] = useState("")
   const [description, setDescription] = useState("")
   const [category, setCategory] = useState<TxCategory>("ADJUSTMENT")
+  const [notify, setNotify] = useState(true)
   const [busy, setBusy] = useState(false)
 
   const [statusOpen, setStatusOpen] = useState(false)
@@ -63,13 +116,34 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
     symbol: "",
     units: "",
     valueUsd: "",
-    creditLedger: false,
+    // On by default: most positions recorded here are money the user actually
+    // sent — a manual bank transfer or wallet payment they expect the desk to
+    // book for them. Recording the asset without the cash was the wrong
+    // default, and left the balance disagreeing with what they had paid.
+    creditLedger: true,
   })
   const [holdingBusy, setHoldingBusy] = useState(false)
   const [removing, setRemoving] = useState<HoldingSummary | null>(null)
+  const [reverseHolding, setReverseHolding] = useState(true)
+  const [notifyHolding, setNotifyHolding] = useState(false)
   const [removeBusy, setRemoveBusy] = useState(false)
 
   const data = detail.data
+
+  function openAdjust(direction: Direction) {
+    // Reset everything. The category persisted across openings, so switching
+    // Credit → Debit kept the previous reason on screen and made "Adjustment"
+    // look like it was itself the direction.
+    setAmount("")
+    setDescription("")
+    setCategory("ADJUSTMENT")
+    // Credit notifies by default, debit does not — money arriving is news the
+    // user wants, money leaving is usually a correction being made moments
+    // later. Reset per opening either way, so a choice made about the last
+    // entry never carries silently into this one.
+    setNotify(direction === "credit")
+    setAdjustOpen(direction)
+  }
 
   async function submitAdjustment() {
     if (!adjustOpen) return
@@ -86,6 +160,7 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
         amount: numeric,
         category,
         description: description.trim() || undefined,
+        notify,
       })
       toast.success(
         adjustOpen === "credit" ? "Account credited" : "Account debited"
@@ -159,7 +234,13 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
       })
       toast.success("Holding added")
       setHoldingOpen(false)
-      setHolding({ name: "", symbol: "", units: "", valueUsd: "", creditLedger: false })
+      setHolding({
+        name: "",
+        symbol: "",
+        units: "",
+        valueUsd: "",
+        creditLedger: true,
+      })
       detail.reload()
     } catch (cause) {
       toast.fromError(cause, "Could not add the holding.")
@@ -172,8 +253,17 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
     if (!removing) return
     setRemoveBusy(true)
     try {
-      await api.admin.archiveHolding(removing.id)
-      toast.success("Holding removed")
+      const result = await api.admin.archiveHolding(
+        removing.id,
+        reverseHolding,
+        reverseHolding && notifyHolding
+      )
+      toast.success(
+        "Holding removed",
+        result.reversed
+          ? "The credit it added has been reversed."
+          : "The balance was left as it is."
+      )
       setRemoving(null)
       detail.reload()
     } catch (cause) {
@@ -208,6 +298,12 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
 
   const suspended = data.user.status === "SUSPENDED"
 
+  const holdingValue = Number(holding.valueUsd)
+  const holdingValueLabel =
+    Number.isFinite(holdingValue) && holdingValue > 0
+      ? `$${holdingValue.toFixed(2)}`
+      : "its value"
+
   return (
     <div className="mx-auto w-full max-w-6xl">
       <BackLink />
@@ -217,11 +313,11 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
         description={data.user.email}
         actions={
           <>
-            <Button size="sm" onClick={() => setAdjustOpen("credit")}>
+            <Button size="sm" onClick={() => openAdjust("credit")}>
               <PlusCircle className="size-4" />
               Credit
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setAdjustOpen("debit")}>
+            <Button size="sm" variant="outline" onClick={() => openAdjust("debit")}>
               <MinusCircle className="size-4" />
               Debit
             </Button>
@@ -312,7 +408,14 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
                 <Money value={item.valueUsd} className="text-sm font-semibold" />
                 <button
                   type="button"
-                  onClick={() => setRemoving(item)}
+                  onClick={() => {
+                    // Reset alongside the target, for the same reason the
+                    // adjustment category resets: a choice made about the last
+                    // position must not silently carry into this one.
+                    setReverseHolding(true)
+                    setNotifyHolding(false)
+                    setRemoving(item)
+                  }}
                   aria-label={`Remove ${item.name}`}
                   className="shrink-0 rounded-lg p-1.5 text-secondary-400 transition-colors hover:bg-red-50 hover:text-red-600"
                 >
@@ -384,13 +487,16 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
       <ConfirmDialog
         open={adjustOpen !== null}
         onOpenChange={(next) => !busy && !next && setAdjustOpen(null)}
-        title={adjustOpen === "credit" ? "Credit this account" : "Debit this account"}
+        title={
+          adjustOpen === "credit" ? "Credit this account" : "Debit this account"
+        }
         description={
           adjustOpen === "credit"
-            ? "Adds funds to the user's balance and writes a ledger entry."
-            : "Removes funds from the user's balance and writes a ledger entry."
+            ? "Money in. Raises the balance and appears on the user's statement."
+            : "Money out. Lowers the balance and appears on the user's statement."
         }
         confirmLabel={adjustOpen === "credit" ? "Credit" : "Debit"}
+        tone={adjustOpen === "debit" ? "danger" : "default"}
         busy={busy}
         onConfirm={() => void submitAdjustment()}
       >
@@ -411,7 +517,9 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
               htmlFor="adjust-category"
               className="mb-2 block text-sm font-medium text-secondary-700"
             >
-              Category
+              {adjustOpen === "credit"
+                ? "What is this for?"
+                : "What are you reversing?"}
             </label>
             <select
               id="adjust-category"
@@ -420,11 +528,16 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
               onChange={(event) => setCategory(event.target.value as TxCategory)}
               className="h-11 w-full rounded-lg border-2 border-secondary-200 bg-white px-3 text-sm outline-none focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
             >
-              <option value="ADJUSTMENT">Adjustment</option>
-              <option value="PROFIT">Profit</option>
-              <option value="DEPOSIT">Deposit</option>
-              <option value="PLAN_PAYOUT">Plan payout</option>
+              {CATEGORY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {adjustOpen === "credit" ? option.credit : option.debit}
+                </option>
+              ))}
             </select>
+            <p className="mt-1.5 text-xs text-secondary-500">
+              Direction is already set by the button you clicked. This only
+              labels the reason, and which dashboard figure moves with it.
+            </p>
           </div>
           <Input
             id="adjust-description"
@@ -434,6 +547,35 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             disabled={busy}
+          />
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-secondary-50 p-3">
+            <input
+              type="checkbox"
+              checked={notify}
+              disabled={busy}
+              onChange={(event) => setNotify(event.target.checked)}
+              className="mt-0.5 size-4 rounded border-secondary-300"
+            />
+            <span className="text-sm text-secondary-700">
+              {adjustOpen === "credit"
+                ? "Email the user about this credit"
+                : "Email the user about this debit"}
+              <span className="mt-0.5 block text-xs text-secondary-500">
+                {notify
+                  ? adjustOpen === "debit"
+                    ? "They get a notice with the amount, the reason you typed, and how to query it."
+                    : category === "PROFIT" || category === "PLAN_PAYOUT"
+                      ? "They get the profit notice with the amount and their new balance."
+                      : "They get a notice with the amount and their new balance."
+                  : "Nothing is sent. Use this for correcting your own mistake."}
+              </span>
+            </span>
+          </label>
+
+          <AdjustmentEffect
+            direction={adjustOpen}
+            category={category}
+            amount={amount}
           />
         </div>
       </ConfirmDialog>
@@ -578,9 +720,14 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
               className="mt-0.5 size-4 rounded border-secondary-300"
             />
             <span className="text-sm text-secondary-700">
-              Also credit the cash balance
-              <span className="block text-xs text-secondary-500">
-                Leave off to record a position the user already funded.
+              Also add this to the cash balance
+              {/* Both states are spelled out because the difference is money:
+                  off, the dashboard lists a position the balance knows nothing
+                  about. */}
+              <span className="mt-0.5 block text-xs text-secondary-500">
+                {holding.creditLedger
+                  ? `On — balance rises by ${holdingValueLabel}, and the position is listed on the dashboard.`
+                  : "Off — the position is listed on the dashboard only. The balance does not move."}
               </span>
             </span>
           </label>
@@ -600,7 +747,95 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
         tone="danger"
         busy={removeBusy}
         onConfirm={() => void removeHolding()}
-      />
+      >
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-secondary-50 p-3">
+          <input
+            type="checkbox"
+            checked={reverseHolding}
+            disabled={removeBusy}
+            onChange={(event) => setReverseHolding(event.target.checked)}
+            className="mt-0.5 size-4 rounded border-secondary-300"
+          />
+          <span className="text-sm text-secondary-700">
+            Also take back the money it added
+            <span className="mt-0.5 block text-xs text-secondary-500">
+              {reverseHolding
+                ? "Writes a matching debit, so the balance and invested capital both come back down. Nothing happens if the position never credited the balance."
+                : "The position goes, the money stays. Use this to write off a position you do not want to claw back."}
+            </span>
+          </span>
+        </label>
+
+        {/* Only when money is actually leaving — there is nothing to announce
+            about a position that never credited the balance. */}
+        {reverseHolding && (
+          <label className="mt-2 flex cursor-pointer items-start gap-2.5 rounded-lg bg-secondary-50 p-3">
+            <input
+              type="checkbox"
+              checked={notifyHolding}
+              disabled={removeBusy}
+              onChange={(event) => setNotifyHolding(event.target.checked)}
+              className="mt-0.5 size-4 rounded border-secondary-300"
+            />
+            <span className="text-sm text-secondary-700">
+              Email the user about the money coming back out
+              <span className="mt-0.5 block text-xs text-secondary-500">
+                {notifyHolding
+                  ? "They get a notice naming the position, the amount, and how to query it."
+                  : "Nothing is sent. Off by default — most reversals are the desk correcting its own entry."}
+              </span>
+            </span>
+          </label>
+        )}
+      </ConfirmDialog>
+    </div>
+  )
+}
+
+/**
+ * Spells out what the two fields will actually do before the admin commits.
+ *
+ * The dialog previously showed a direction in the title and a category in a
+ * dropdown and left the reader to work out how they combined — which is how
+ * "Credit" + "Adjustment" got read as meaning adjustments were debits. Stating
+ * both movements in one sentence removes the guess.
+ */
+function AdjustmentEffect({
+  direction,
+  category,
+  amount,
+}: {
+  direction: Direction | null
+  category: TxCategory
+  amount: string
+}) {
+  const numeric = Number(amount)
+  if (!direction || !Number.isFinite(numeric) || numeric <= 0) return null
+
+  const option = CATEGORY_OPTIONS.find((item) => item.value === category)
+  const verb = direction === "credit" ? "rises" : "falls"
+  const figure = `$${numeric.toFixed(2)}`
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border p-3 text-xs",
+        direction === "credit"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+          : "border-amber-200 bg-amber-50 text-amber-900"
+      )}
+    >
+      <p className="font-semibold">After this:</p>
+      <ul className="mt-1 space-y-0.5">
+        <li>
+          Total balance {verb} by {figure}
+        </li>
+        {option?.affects && (
+          <li>
+            {option.affects} {verb} by {figure}
+          </li>
+        )}
+      </ul>
     </div>
   )
 }

@@ -7,10 +7,17 @@ import {
   type User,
 } from "@prisma/client"
 
-import { NotFoundError, ValidationError } from "../../lib/errors.js"
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../../lib/errors.js"
 import { logger } from "../../lib/logger.js"
-import { ZERO, bpsOf, round2, serialize, toMoney } from "../../lib/money.js"
+import { ZERO, bpsOf, round2, serialize, toMoney, type Money } from "../../lib/money.js"
+import type { Pagination } from "../../lib/pagination.js"
+import { toSkipTake } from "../../lib/pagination.js"
 import { prisma } from "../../lib/prisma.js"
+import { recordAudit } from "../../services/audit.service.js"
 import {
   sendSubscriptionCancelledEmail,
   sendSubscriptionCompletedEmail,
@@ -316,4 +323,327 @@ export async function getAvailableForSubscription(
 ): Promise<string> {
   const { available } = await getBalanceSnapshot(userId)
   return serialize(available)
+}
+
+/* ------------------------------------------------------------------ admin */
+
+/**
+ * Plan administration.
+ *
+ * Plans were seeded once and only changeable with a psql session against
+ * production — so altering a headline rate, or retiring a tier, meant hand-
+ * editing the table the accrual job reads every night.
+ *
+ * Two rules the write paths enforce:
+ *
+ *  - A plan with subscriptions is never deleted, only deactivated. Postgres
+ *    would refuse the delete anyway (`onDelete: Restrict`), but failing with a
+ *    foreign-key error rather than an explanation is not an answer.
+ *  - `dailyReturnBps` and `durationDays` are edited freely, but the change
+ *    applies to *future* accruals only. Live subscriptions carry their own
+ *    `principal` and are paid from the plan they are attached to, so a rate cut
+ *    reprices existing books from tonight's run onward. That is surfaced in the
+ *    UI rather than hidden.
+ */
+
+/** Everything, including retired tiers — the admin list must show both. */
+export async function adminListPlans() {
+  const plans = await prisma.plan.findMany({
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    include: {
+      _count: { select: { subscriptions: true } },
+    },
+  })
+
+  const active = await prisma.subscription.groupBy({
+    by: ["planId"],
+    where: { status: SubscriptionStatus.ACTIVE },
+    _count: { _all: true },
+    _sum: { principal: true },
+  })
+
+  return plans.map((plan) => {
+    const live = active.find((row) => row.planId === plan.id)
+
+    return {
+      ...serializePlan(plan),
+      isActive: plan.isActive,
+      sortOrder: plan.sortOrder,
+      subscriptions: {
+        total: plan._count.subscriptions,
+        active: live?._count._all ?? 0,
+        activePrincipal: serialize(live?._sum.principal ?? ZERO),
+      },
+    }
+  })
+}
+
+export interface PlanInput {
+  slug: string
+  name: string
+  dailyReturnBps: number
+  durationDays: number
+  minDeposit: number
+  maxDeposit?: number | null | undefined
+  referralBonusPercent: number
+  description: string
+  features: string[]
+  isPopular: boolean
+  isActive: boolean
+  sortOrder: number
+}
+
+/** Shared by create and update — the invariants hold in both directions. */
+function assertPlanShape(input: {
+  minDeposit: Money
+  maxDeposit: Money | null
+}): void {
+  if (input.maxDeposit && input.maxDeposit.lessThan(input.minDeposit)) {
+    throw new ValidationError(
+      "The maximum deposit cannot be below the minimum deposit."
+    )
+  }
+}
+
+export async function createPlan(params: {
+  input: PlanInput
+  adminId: string
+  ip?: string | undefined
+}) {
+  const { input } = params
+
+  const minDeposit = round2(toMoney(input.minDeposit))
+  const maxDeposit =
+    input.maxDeposit === null || input.maxDeposit === undefined
+      ? null
+      : round2(toMoney(input.maxDeposit))
+
+  assertPlanShape({ minDeposit, maxDeposit })
+
+  const existing = await prisma.plan.findUnique({ where: { slug: input.slug } })
+  if (existing) {
+    throw new ConflictError(`A plan with the slug "${input.slug}" already exists.`)
+  }
+
+  const plan = await prisma.plan.create({
+    data: {
+      slug: input.slug,
+      name: input.name,
+      dailyReturnBps: input.dailyReturnBps,
+      durationDays: input.durationDays,
+      minDeposit,
+      maxDeposit,
+      referralBonusPercent: input.referralBonusPercent,
+      description: input.description,
+      features: input.features,
+      isPopular: input.isPopular,
+      isActive: input.isActive,
+      sortOrder: input.sortOrder,
+    },
+  })
+
+  await recordAudit({
+    actorId: params.adminId,
+    action: "plan.create",
+    targetType: "Plan",
+    targetId: plan.id,
+    after: { slug: plan.slug, name: plan.name, dailyReturnBps: plan.dailyReturnBps },
+    ip: params.ip,
+  })
+
+  return serializePlan(plan)
+}
+
+export async function updatePlan(params: {
+  planId: string
+  input: Partial<PlanInput>
+  adminId: string
+  ip?: string | undefined
+}) {
+  const existing = await prisma.plan.findUnique({ where: { id: params.planId } })
+  if (!existing) throw new NotFoundError("Plan")
+
+  const { input } = params
+
+  const minDeposit =
+    input.minDeposit === undefined
+      ? existing.minDeposit
+      : round2(toMoney(input.minDeposit))
+
+  const maxDeposit =
+    input.maxDeposit === undefined
+      ? existing.maxDeposit
+      : input.maxDeposit === null
+        ? null
+        : round2(toMoney(input.maxDeposit))
+
+  assertPlanShape({ minDeposit, maxDeposit })
+
+  // The slug is the public identifier a subscription is created against, so a
+  // collision has to be caught before the unique index turns it into a 500.
+  if (input.slug && input.slug !== existing.slug) {
+    const clash = await prisma.plan.findUnique({ where: { slug: input.slug } })
+    if (clash) {
+      throw new ConflictError(`A plan with the slug "${input.slug}" already exists.`)
+    }
+  }
+
+  const plan = await prisma.plan.update({
+    where: { id: params.planId },
+    data: {
+      ...(input.slug !== undefined ? { slug: input.slug } : {}),
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.dailyReturnBps !== undefined
+        ? { dailyReturnBps: input.dailyReturnBps }
+        : {}),
+      ...(input.durationDays !== undefined
+        ? { durationDays: input.durationDays }
+        : {}),
+      ...(input.minDeposit !== undefined ? { minDeposit } : {}),
+      ...(input.maxDeposit !== undefined ? { maxDeposit } : {}),
+      ...(input.referralBonusPercent !== undefined
+        ? { referralBonusPercent: input.referralBonusPercent }
+        : {}),
+      ...(input.description !== undefined
+        ? { description: input.description }
+        : {}),
+      ...(input.features !== undefined ? { features: input.features } : {}),
+      ...(input.isPopular !== undefined ? { isPopular: input.isPopular } : {}),
+      ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+    },
+  })
+
+  await recordAudit({
+    actorId: params.adminId,
+    action: "plan.update",
+    targetType: "Plan",
+    targetId: plan.id,
+    before: {
+      slug: existing.slug,
+      dailyReturnBps: existing.dailyReturnBps,
+      durationDays: existing.durationDays,
+      minDeposit: serialize(existing.minDeposit),
+      isActive: existing.isActive,
+    },
+    after: {
+      slug: plan.slug,
+      dailyReturnBps: plan.dailyReturnBps,
+      durationDays: plan.durationDays,
+      minDeposit: serialize(plan.minDeposit),
+      isActive: plan.isActive,
+    },
+    ip: params.ip,
+  })
+
+  return serializePlan(plan)
+}
+
+/**
+ * Retires a plan. Deletes it outright only if nothing was ever subscribed —
+ * otherwise it is deactivated, because the subscriptions that reference it are
+ * still being paid and still need its rate.
+ */
+export async function retirePlan(params: {
+  planId: string
+  adminId: string
+  ip?: string | undefined
+}): Promise<{ deleted: boolean }> {
+  const plan = await prisma.plan.findUnique({
+    where: { id: params.planId },
+    include: { _count: { select: { subscriptions: true } } },
+  })
+  if (!plan) throw new NotFoundError("Plan")
+
+  const deletable = plan._count.subscriptions === 0
+
+  if (deletable) {
+    await prisma.plan.delete({ where: { id: plan.id } })
+  } else {
+    await prisma.plan.update({
+      where: { id: plan.id },
+      data: { isActive: false },
+    })
+  }
+
+  await recordAudit({
+    actorId: params.adminId,
+    action: deletable ? "plan.delete" : "plan.deactivate",
+    targetType: "Plan",
+    targetId: plan.id,
+    before: { slug: plan.slug, isActive: plan.isActive },
+    after: { deleted: deletable, subscriptions: plan._count.subscriptions },
+    ip: params.ip,
+  })
+
+  return { deleted: deletable }
+}
+
+/** Every subscription on the platform, newest first. */
+export async function adminListSubscriptions(params: {
+  pagination: Pagination
+  status?: SubscriptionStatus | undefined
+}) {
+  const where: Prisma.SubscriptionWhereInput = params.status
+    ? { status: params.status }
+    : {}
+
+  const [items, total] = await Promise.all([
+    prisma.subscription.findMany({
+      where,
+      include: {
+        plan: true,
+        user: { select: { uid: true, email: true, fullName: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      ...toSkipTake(params.pagination),
+    }),
+    prisma.subscription.count({ where }),
+  ])
+
+  return {
+    items: items.map((subscription) => ({
+      id: subscription.id,
+      user: subscription.user,
+      planName: subscription.plan.name,
+      planSlug: subscription.plan.slug,
+      principal: serialize(subscription.principal),
+      totalAccrued: serialize(subscription.totalAccrued),
+      status: subscription.status,
+      startedAt: subscription.startedAt,
+      endsAt: subscription.endsAt,
+      lastAccruedOn: subscription.lastAccruedOn,
+    })),
+    total,
+  }
+}
+
+/**
+ * Cancels on the user's behalf, returning the principal exactly as a
+ * self-service cancellation does — the same ledger entry, the same email. The
+ * only difference is who pressed the button, which the audit log records.
+ */
+export async function adminCancelSubscription(params: {
+  subscriptionId: string
+  adminId: string
+  ip?: string | undefined
+}): Promise<void> {
+  const subscription = await prisma.subscription.findUnique({
+    where: { id: params.subscriptionId },
+  })
+  if (!subscription) throw new NotFoundError("Subscription")
+
+  await cancelSubscription(subscription.userId, subscription.id)
+
+  await recordAudit({
+    actorId: params.adminId,
+    action: "subscription.cancel",
+    targetType: "Subscription",
+    targetId: subscription.id,
+    after: {
+      userId: subscription.userId,
+      principalReturned: serialize(subscription.principal),
+    },
+    ip: params.ip,
+  })
 }

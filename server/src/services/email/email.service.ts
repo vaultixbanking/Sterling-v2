@@ -311,6 +311,57 @@ export function sendAccountCreditedEmail(
   )
 }
 
+export function sendAccountDebitedEmail(
+  user: User,
+  amount: string,
+  description: string | null,
+  newBalance: string
+): Promise<void> {
+  return send(
+    user.email,
+    templates.accountDebitedEmail({
+      fullName: user.fullName,
+      amount,
+      description,
+      newBalance,
+      supportEmail: env.SUPPORT_EMAIL,
+    })
+  )
+}
+
+export function sendProfitCreditedEmail(
+  user: User,
+  amount: string,
+  description: string | null,
+  newBalance: string
+): Promise<void> {
+  return send(
+    user.email,
+    templates.profitCreditedEmail({
+      fullName: user.fullName,
+      amount,
+      description,
+      newBalance,
+    })
+  )
+}
+
+export function sendHoldingAddedEmail(
+  user: User,
+  holding: {
+    name: string
+    symbol: string
+    units: string
+    valueUsd: string
+    newBalance: string
+  }
+): Promise<void> {
+  return send(
+    user.email,
+    templates.holdingAddedEmail({ fullName: user.fullName, ...holding })
+  )
+}
+
 export function sendWithdrawalPinEmail(
   user: User,
   expiresInMinutes: number

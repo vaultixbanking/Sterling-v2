@@ -101,6 +101,17 @@ function formatAmount(value: string): string {
 
 const money = (value: string) => `$${formatAmount(value)}`
 
+/**
+ * Trims the trailing zeros Postgres pads onto a `numeric(24,8)`.
+ *
+ * `0.00500000 BTC` reads like a rounding artefact; `0.005 BTC` reads like a
+ * position. Whole numbers keep their form — "100" has no fraction to trim.
+ */
+function formatUnits(value: string): string {
+  const trimmed = value.trim()
+  return trimmed.includes(".") ? trimmed.replace(/\.?0+$/, "") : trimmed
+}
+
 const dateFormat = new Intl.DateTimeFormat("en-GB", {
   day: "numeric",
   month: "long",
@@ -1117,5 +1128,161 @@ export function accountCreditedEmail(params: {
 Your account was credited ${money(params.amount)}.${details ? `\n\nDetails: ${details}` : ""}
 
 New balance: ${money(params.newBalance)}`,
+  }
+}
+
+/**
+ * A position booked by the desk, with the cash that came with it.
+ *
+ * Separate from `accountCreditedEmail` rather than a variant of it: the
+ * interesting part here is the position. Someone who wired money for 0.05 BTC
+ * wants to see the units they were credited, not just a dollar figure, and
+ * folding that into the generic credit mail would have made every other credit
+ * carry two empty rows.
+ *
+ * Only sent when the ledger actually moved. Recording an asset the account was
+ * never funded for is bookkeeping, not news.
+ */
+export function holdingAddedEmail(params: {
+  fullName: string
+  name: string
+  symbol: string
+  units: string
+  valueUsd: string
+  newBalance: string
+}): Email {
+  const first = firstNameOf(params.fullName)
+  const position = `${formatUnits(params.units)} ${params.symbol}`
+
+  return {
+    subject: `${params.name} added to your portfolio`,
+    html: layout(
+      "Position added",
+      paragraph(
+        `Hi ${esc(first)}, a new position has been added to your portfolio and the matching funds credited to your balance.`
+      ) +
+        amountHero(money(params.valueUsd), "Added to your balance", "success") +
+        panel(
+          [
+            ["Asset", params.name],
+            ["Position", position],
+            ["Value", money(params.valueUsd)],
+            ["New balance", money(params.newBalance)],
+          ],
+          "Position details"
+        ),
+      // layout() interpolates the preheader raw — the symbol is admin-entered.
+      `${esc(position)} — ${money(params.valueUsd)} added to your balance.`,
+      { eyebrow: "Portfolio", tone: "success" }
+    ),
+    text: `Hi ${first},
+
+A new position has been added to your portfolio and the matching funds credited to your balance.
+
+Asset: ${params.name}
+Position: ${position}
+Value: ${money(params.valueUsd)}
+
+New balance: ${money(params.newBalance)}`,
+  }
+}
+
+/**
+ * Profit, as its own event.
+ *
+ * Split from `accountCreditedEmail` because they were indistinguishable in an
+ * inbox: earning a return and having a typo corrected both arrived as "Your
+ * account has been credited". Profit is what the platform sells, so it gets the
+ * subject line, the eyebrow and the caption that say so.
+ */
+export function profitCreditedEmail(params: {
+  fullName: string
+  amount: string
+  description: string | null
+  newBalance: string
+}): Email {
+  const first = firstNameOf(params.fullName)
+  const details = params.description?.trim()
+
+  return {
+    subject: `Profit credited — ${money(params.amount)}`,
+    html: layout(
+      "Profit credited",
+      paragraph(
+        `Hi ${esc(first)}, your account has earned a return and it is already in your balance.`
+      ) +
+        amountHero(money(params.amount), "Profit earned", "success") +
+        panel(
+          [
+            ...(details
+              ? ([["Details", details]] as Array<[string, string]>)
+              : []),
+            ["New balance", money(params.newBalance)],
+          ],
+          "Summary"
+        ),
+      `${money(params.amount)} profit credited to your account.`,
+      { eyebrow: "Profit", tone: "success" }
+    ),
+    text: `Hi ${first},
+
+Your account has earned a return of ${money(params.amount)} and it is already in your balance.${details ? `\n\nDetails: ${details}` : ""}
+
+New balance: ${money(params.newBalance)}`,
+  }
+}
+
+/**
+ * Money leaving an account by an admin's hand.
+ *
+ * The counterpart to `accountCreditedEmail`, and the last silent path: every
+ * way money *arrived* notified the user, while a manual debit and a reversed
+ * holding took it back without a word.
+ *
+ * Carries a support address, because the one thing someone will want after
+ * reading this is a way to ask why. Amber rather than red — a correction is
+ * routine, and dressing it as an alarm invites a support ticket per entry.
+ */
+export function accountDebitedEmail(params: {
+  fullName: string
+  amount: string
+  description: string | null
+  newBalance: string
+  supportEmail: string
+}): Email {
+  const first = firstNameOf(params.fullName)
+  const details = params.description?.trim()
+  const mailto = mailLink(params.supportEmail)
+
+  return {
+    subject: `Funds removed from your account — ${money(params.amount)}`,
+    html: layout(
+      "Funds removed",
+      paragraph(
+        `Hi ${esc(first)}, an adjustment has been made to your account and funds have been removed from your balance.`
+      ) +
+        amountHero(money(params.amount), "Removed from your balance", "warn") +
+        panel(
+          [
+            ...(details
+              ? ([["Reason", details]] as Array<[string, string]>)
+              : []),
+            ["New balance", money(params.newBalance)],
+          ],
+          "Summary"
+        ) +
+        paragraph(
+          `If this does not look right, reply to this email or contact ${mailto} and we will look into it.`
+        ),
+      `${money(params.amount)} removed from your balance.`,
+      { eyebrow: "Account", tone: "warn" }
+    ),
+    text: `Hi ${first},
+
+An adjustment has been made to your account and ${money(params.amount)} has been removed from your balance.${details ? `\n\nReason: ${details}` : ""}
+
+New balance: ${money(params.newBalance)}
+
+If this does not look right, contact ${params.supportEmail}.`,
   }
 }

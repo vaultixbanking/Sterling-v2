@@ -1,6 +1,7 @@
 import {
   DepositMethod,
   RequestStatus,
+  SubscriptionStatus,
   TxCategory,
   UserStatus,
   type Prisma,
@@ -9,6 +10,7 @@ import { Router } from "express"
 import { z } from "zod"
 
 import {
+  ADJUSTABLE_CATEGORIES,
   PIN_ALLOWED_LENGTHS,
   PIN_DEFAULT_TTL_MINUTES,
   PIN_MAX_TTL_MINUTES,
@@ -28,6 +30,7 @@ import {
 } from "../../services/email/email.service.js"
 import { getProofLink, processDeposit } from "../deposits/deposits.service.js"
 import { issuePin, listPins, revokePin } from "../pins/pins.service.js"
+import * as plansService from "../plans/plans.service.js"
 import { processWithdrawal } from "../withdrawals/withdrawals.service.js"
 import { processWithdrawalSchema } from "../withdrawals/withdrawals.schema.js"
 import * as service from "./admin.service.js"
@@ -40,6 +43,17 @@ adminRouter.use(authenticate, requireAdmin)
 
 const uidParam = z.object({ uid: z.string().trim().min(1) })
 const idParam = z.object({ id: z.string().trim().min(1) })
+
+/**
+ * A boolean in a query string.
+ *
+ * NOT `z.coerce.boolean()`, which runs JavaScript truthiness: the string
+ * `"false"` is non-empty and therefore coerces to `true`, so every opt-out
+ * silently becomes an opt-in. Only the two literals are accepted.
+ */
+const booleanQuery = z
+  .enum(["true", "false"])
+  .transform((value) => value === "true")
 
 /* ------------------------------------------------------------------ stats */
 
@@ -109,8 +123,11 @@ adminRouter.post(
     body: z.object({
       direction: z.enum(["credit", "debit"]),
       amount: z.coerce.number().positive(),
+      // Restricted to the hand-writable set — see ADJUSTABLE_CATEGORIES. The
+      // enum used to be open, so `credit` + `WITHDRAWAL` was accepted and
+      // produced a row the withdrawal queue knew nothing about.
       category: z
-        .enum(TxCategory)
+        .enum(ADJUSTABLE_CATEGORIES)
         .default(TxCategory.ADJUSTMENT),
       description: z.string().trim().max(300).optional(),
       notify: z.boolean().optional(),
@@ -140,7 +157,13 @@ adminRouter.post(
       symbol: z.string().trim().min(1).max(20),
       units: z.coerce.number().nonnegative(),
       valueUsd: z.coerce.number().nonnegative(),
-      /** Whether to also credit the ledger. Explicit, not implied. */
+      /**
+       * Whether to also credit the ledger. Explicit, not implied — but the
+       * default is ON, because a position recorded here is nearly always money
+       * the user has already sent by hand and expects the desk to book. Omit
+       * the field and the balance moves; pass `false` only to record an asset
+       * the account was never funded for.
+       */
       creditLedger: z.boolean().default(true),
     }),
   }),
@@ -179,14 +202,27 @@ adminRouter.patch(
 
 adminRouter.delete(
   "/holdings/:id",
-  validate({ params: idParam }),
+  validate({
+    params: idParam,
+    // Defaults to reversing, matching the default on the way in: if booking the
+    // position added money, removing it should take that money back.
+    query: z.object({
+      reverseLedger: booleanQuery.optional(),
+      // Off unless asked, matching a manual debit.
+      notify: booleanQuery.optional(),
+    }),
+  }),
   asyncHandler(async (req, res) => {
-    await service.archiveHolding({
+    const query = req.query as { reverseLedger?: boolean; notify?: boolean }
+
+    const result = await service.archiveHolding({
       holdingId: req.params.id as string,
       adminId: req.auth!.userId,
+      reverseLedger: query.reverseLedger,
+      notify: query.notify,
       ip: clientIp(req),
     })
-    noContent(res)
+    ok(res, result)
   })
 )
 
@@ -431,7 +467,7 @@ adminRouter.delete(
     params: idParam,
     // Off by default, mirroring issue: a PIN the user was never told about
     // should not be announced to them at the moment it is cancelled.
-    query: z.object({ notifyUser: z.coerce.boolean().optional() }),
+    query: z.object({ notifyUser: booleanQuery.optional() }),
   }),
   asyncHandler(async (req, res) => {
     const owner = await revokePin(req.params.id as string)
@@ -593,6 +629,126 @@ adminRouter.delete(
       ip: clientIp(req),
     })
     noContent(res)
+  })
+)
+
+/* ------------------------------------------------------------------ plans */
+
+/**
+ * Rates are basis points, not percent — 250 is 2.50%/day. Integer maths is
+ * what keeps the accrual job free of float drift, so the API speaks the same
+ * units the column stores rather than converting at the edge.
+ */
+const planBody = z.object({
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(40)
+    .toLowerCase()
+    .regex(
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      "Use lowercase letters, numbers and single hyphens."
+    ),
+  name: z.string().trim().min(2).max(60),
+  dailyReturnBps: z.coerce.number().int().min(1).max(10_000),
+  durationDays: z.coerce.number().int().min(1).max(3_650),
+  minDeposit: z.coerce.number().nonnegative(),
+  maxDeposit: z.coerce.number().positive().nullable().optional(),
+  referralBonusPercent: z.coerce.number().int().min(0).max(100).default(0),
+  description: z.string().trim().min(1).max(500),
+  features: z.array(z.string().trim().min(1).max(120)).max(20).default([]),
+  isPopular: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+  sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+})
+
+adminRouter.get(
+  "/plans",
+  asyncHandler(async (_req, res) => {
+    ok(res, { plans: await plansService.adminListPlans() })
+  })
+)
+
+adminRouter.post(
+  "/plans",
+  validate({ body: planBody }),
+  asyncHandler(async (req, res) => {
+    created(res, {
+      plan: await plansService.createPlan({
+        input: req.body,
+        adminId: req.auth!.userId,
+        ip: clientIp(req),
+      }),
+    })
+  })
+)
+
+adminRouter.patch(
+  "/plans/:id",
+  validate({ params: idParam, body: planBody.partial() }),
+  asyncHandler(async (req, res) => {
+    ok(res, {
+      plan: await plansService.updatePlan({
+        planId: req.params.id as string,
+        input: req.body,
+        adminId: req.auth!.userId,
+        ip: clientIp(req),
+      }),
+    })
+  })
+)
+
+adminRouter.delete(
+  "/plans/:id",
+  validate({ params: idParam }),
+  asyncHandler(async (req, res) => {
+    ok(
+      res,
+      await plansService.retirePlan({
+        planId: req.params.id as string,
+        adminId: req.auth!.userId,
+        ip: clientIp(req),
+      })
+    )
+  })
+)
+
+/* ---------------------------------------------------------- subscriptions */
+
+adminRouter.get(
+  "/subscriptions",
+  validate({
+    query: paginationSchema.extend({
+      status: z.enum(SubscriptionStatus).optional(),
+    }),
+  }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as unknown as {
+      page: number
+      limit: number
+      status?: SubscriptionStatus
+    }
+
+    const { items, total } = await plansService.adminListSubscriptions({
+      pagination: { page: query.page, limit: query.limit },
+      status: query.status,
+    })
+
+    paginated(res, items, buildPageMeta(query.page, query.limit, total))
+  })
+)
+
+adminRouter.post(
+  "/subscriptions/:id/cancel",
+  validate({ params: idParam }),
+  asyncHandler(async (req, res) => {
+    await plansService.adminCancelSubscription({
+      subscriptionId: req.params.id as string,
+      adminId: req.auth!.userId,
+      ip: clientIp(req),
+    })
+    ok(res, { message: "Subscription cancelled and principal returned." })
   })
 )
 
