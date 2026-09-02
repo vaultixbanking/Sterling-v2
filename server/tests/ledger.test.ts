@@ -7,6 +7,7 @@ import {
   debit,
   getBalanceSnapshot,
   settle,
+  sumCategory,
   unwind,
 } from "../src/services/ledger.service.js"
 import { cleanupTestUsers, createTestUser, hasDatabase, testPrisma } from "./helpers/db.js"
@@ -235,5 +236,68 @@ describe.skipIf(!hasDatabase)("ledger", () => {
 
     await settle(withdrawal.id, admin.id)
     await expect(settle(withdrawal.id, admin.id)).rejects.toThrow(/not found/i)
+  })
+
+  /**
+   * Reversals must move a category figure back down, not up.
+   *
+   * `sumCategory` aggregated without splitting on type, and because `amount` is
+   * always stored positive, a debit counted as more of the thing it reversed:
+   * clawing back $50 of wrongly-credited profit dropped the balance correctly
+   * but pushed "Profit earned" *up* $50. Reachable from the admin dashboard in
+   * two clicks, and silent.
+   */
+  it("nets a category debit against its credits", async () => {
+    const user = await createTestUser()
+
+    await credit({
+      userId: user.id,
+      amount: toMoney(1000),
+      category: TxCategory.DEPOSIT,
+    })
+    await credit({
+      userId: user.id,
+      amount: toMoney(200),
+      category: TxCategory.PROFIT,
+    })
+
+    expect((await sumCategory(user.id, TxCategory.PROFIT)).toFixed(2)).toBe(
+      "200.00"
+    )
+
+    await debit({
+      userId: user.id,
+      amount: toMoney(50),
+      category: TxCategory.PROFIT,
+      status: TxStatus.COMPLETED,
+    })
+
+    expect((await sumCategory(user.id, TxCategory.PROFIT)).toFixed(2)).toBe(
+      "150.00"
+    )
+    // Balance and category figure moved the same direction, not opposite ones.
+    expect((await getBalanceSnapshot(user.id)).balance.toFixed(2)).toBe(
+      "1150.00"
+    )
+  })
+
+  it("counts only settled rows when netting a category", async () => {
+    const user = await createTestUser()
+
+    await credit({
+      userId: user.id,
+      amount: toMoney(500),
+      category: TxCategory.DEPOSIT,
+    })
+    // Defaults to PENDING — reserved, but nothing has settled.
+    await debit({
+      userId: user.id,
+      amount: toMoney(100),
+      category: TxCategory.DEPOSIT,
+    })
+
+    expect((await sumCategory(user.id, TxCategory.DEPOSIT)).toFixed(2)).toBe(
+      "500.00"
+    )
   })
 })

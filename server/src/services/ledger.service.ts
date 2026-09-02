@@ -109,7 +109,20 @@ export async function getAvailableBalance(
   return (await getBalanceSnapshot(userId, db)).available
 }
 
-/** Sum of completed credits in a category — e.g. lifetime profit. */
+/**
+ * Net completed movement in a category — credits minus debits.
+ *
+ * The netting is the whole point. `amount` is always stored positive and the
+ * direction lives in `type`, so summing rows without splitting on type counts a
+ * reversal as if it were more of the thing it reverses: debiting $50 of PROFIT
+ * to claw back a mistaken credit used to push `profitEarned` *up* by $50 while
+ * the balance correctly went down. Every figure built on this — profit earned,
+ * today/week profit, invested capital, total return — drifted the wrong way,
+ * silently.
+ *
+ * A category can legitimately net negative (more reversed than ever credited);
+ * callers that divide by it must guard for that themselves.
+ */
 export async function sumCategory(
   userId: string,
   category: TxCategory | TxCategory[],
@@ -126,7 +139,8 @@ export async function sumCategory(
         }
       : undefined
 
-  const result = await db.transaction.aggregate({
+  const rows = await db.transaction.groupBy({
+    by: ["type"],
     where: {
       userId,
       category: { in: categories },
@@ -136,7 +150,10 @@ export async function sumCategory(
     _sum: { amount: true },
   })
 
-  return round2(result._sum.amount ?? ZERO)
+  const total = (type: TxType): Money =>
+    rows.find((row) => row.type === type)?._sum.amount ?? ZERO
+
+  return round2(total(TxType.CREDIT).sub(total(TxType.DEBIT)))
 }
 
 export interface EntryInput {
