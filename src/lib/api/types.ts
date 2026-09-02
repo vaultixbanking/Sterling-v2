@@ -62,6 +62,8 @@ export interface PublicUser {
   username: string
   fullName: string
   phone: string | null
+  /** ISO 3166-1 alpha-2. Null for accounts predating the field. */
+  country: string | null
   role: Role
   status: UserStatus
   createdAt: string
@@ -77,7 +79,10 @@ export interface RegisterInput {
   fullName: string
   email: string
   username: string
-  phone?: string
+  /** ISO 3166-1 alpha-2 country of residence. */
+  country: string
+  /** E.164. Required since phone became mandatory at signup. */
+  phone: string
   password: string
   acceptedTerms: true
 }
@@ -140,6 +145,7 @@ export type TxCategory =
   | "WITHDRAWAL"
   | "ADJUSTMENT"
   | "PLAN_PAYOUT"
+  | "PLAN_PRINCIPAL"
 
 export interface Transaction {
   id: string
@@ -309,6 +315,8 @@ export interface AdminUserListItem {
   username: string
   fullName: string
   phone: string | null
+  /** ISO 3166-1 alpha-2. Null for accounts predating the field. */
+  country: string | null
   role: Role
   status: UserStatus
   lastLoginAt: string | null
@@ -431,4 +439,67 @@ export interface AuditLogEntry {
   after: unknown
   ip: string | null
   createdAt: string
+}
+
+/* ---------------------------------------------------------- admin: plans */
+
+/**
+ * A plan as the admin sees it — the public shape plus the two fields the
+ * marketing view has no use for, and the book currently riding on it.
+ */
+export interface AdminPlan extends Plan {
+  isActive: boolean
+  sortOrder: number
+  subscriptions: {
+    total: number
+    active: number
+    /** Sum of live principal, so retiring a tier shows what it would strand. */
+    activePrincipal: string
+  }
+}
+
+/** Basis points, matching the column — 250 is 2.50% per day. */
+export interface PlanInput {
+  slug: string
+  name: string
+  dailyReturnBps: number
+  durationDays: number
+  minDeposit: number
+  maxDeposit: number | null
+  referralBonusPercent: number
+  description: string
+  features: string[]
+  isPopular: boolean
+  isActive: boolean
+  sortOrder: number
+}
+
+export interface AdminSubscriptionRow {
+  id: string
+  user: QueueUser
+  planName: string
+  planSlug: string
+  principal: string
+  totalAccrued: string
+  status: SubscriptionStatus
+  startedAt: string
+  endsAt: string
+  lastAccruedOn: string | null
+}
+
+/* ------------------------------------------------------- username checking */
+
+export type UsernameUnavailableReason = "taken" | "reserved" | "invalid"
+
+/**
+ * Advisory. `register` re-checks and can still return a 409, because someone
+ * may claim the name between this answer and the submit.
+ */
+export interface UsernameCheck {
+  username: string
+  available: boolean
+  reason?: UsernameUnavailableReason
+  message?: string
+  /** Free, legal alternatives — empty when the name is available. */
+  suggestions: string[]
 }

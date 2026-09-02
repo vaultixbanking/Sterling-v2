@@ -2,7 +2,9 @@ import { request } from "./client"
 import type {
   AdminDepositRow,
   AdminPin,
+  AdminPlan,
   AdminStats,
+  AdminSubscriptionRow,
   AdminUserDetail,
   AdminUserListItem,
   AdminWithdrawalRow,
@@ -19,16 +21,19 @@ import type {
   PerformancePeriod,
   PerformanceSeries,
   Plan,
+  PlanInput,
   PortfolioSummary,
   PublicUser,
   RegisterInput,
   RequestStatus,
   SessionPayload,
   Subscription,
+  SubscriptionStatus,
   Transaction,
   TxCategory,
   TxStatus,
   TxType,
+  UsernameCheck,
   UserStatus,
   WithdrawalLimits,
   WithdrawalRequest,
@@ -78,6 +83,17 @@ export const auth = {
     request<{ message: string }>("/auth/resend-verification", {
       method: "POST",
       body: { email },
+    }),
+
+  /**
+   * Live availability for the signup form. POST rather than GET so the full
+   * name stays out of URLs and access logs; `fullName` is optional and only
+   * improves the suggestions.
+   */
+  checkUsername: (username: string, fullName?: string) =>
+    request<UsernameCheck>("/auth/check-username", {
+      method: "POST",
+      body: { username, ...(fullName ? { fullName } : {}) },
     }),
 
   me: () => request<{ user: PublicUser }>("/auth/me"),
@@ -223,7 +239,13 @@ export const admin = {
       symbol: string
       units: number
       valueUsd: number
-      creditLedger: boolean
+      /**
+       * Omit to inherit the server's default (ON — the balance moves). Made
+       * optional so the API owns this decision: the field was required here
+       * and initialised to `false` in the admin form, which quietly overrode a
+       * server default of `true` and recorded positions the balance never saw.
+       */
+      creditLedger?: boolean
     }
   ) =>
     request<{ holding: HoldingSummary }>(`/admin/users/${uid}/holdings`, {
@@ -237,8 +259,42 @@ export const admin = {
       body: input,
     }),
 
-  archiveHolding: (id: string) =>
-    request<void>(`/admin/holdings/${id}`, { method: "DELETE" }),
+  /**
+   * Archives a position. By default this also reverses the credit it added —
+   * pass `false` to strip the position and leave the money.
+   */
+  archiveHolding: (id: string, reverseLedger = true, notify = false) =>
+    request<{ reversed: boolean }>(`/admin/holdings/${id}`, {
+      method: "DELETE",
+      query: { reverseLedger: String(reverseLedger), notify: String(notify) },
+    }),
+
+  plans: () => request<{ plans: AdminPlan[] }>("/admin/plans"),
+
+  createPlan: (input: PlanInput) =>
+    request<{ plan: Plan }>("/admin/plans", { method: "POST", body: input }),
+
+  updatePlan: (id: string, input: Partial<PlanInput>) =>
+    request<{ plan: Plan }>(`/admin/plans/${id}`, {
+      method: "PATCH",
+      body: input,
+    }),
+
+  /** Deletes an unused plan; deactivates one that has subscriptions. */
+  retirePlan: (id: string) =>
+    request<{ deleted: boolean }>(`/admin/plans/${id}`, { method: "DELETE" }),
+
+  subscriptions: (
+    params: { page?: number; limit?: number; status?: SubscriptionStatus } = {}
+  ) =>
+    request<Paginated<AdminSubscriptionRow>>("/admin/subscriptions", {
+      query: params,
+    }),
+
+  cancelSubscription: (id: string) =>
+    request<{ message: string }>(`/admin/subscriptions/${id}/cancel`, {
+      method: "POST",
+    }),
 
   deposits: (params: { page?: number; limit?: number; status?: RequestStatus } = {}) =>
     request<Paginated<AdminDepositRow>>("/admin/deposits", { query: params }),
