@@ -230,6 +230,20 @@ model Transaction {
   /// Free-form context: asset symbol, wallet address, bank reference, etc.
   metadata    Json?
 
+  /// Receipt fields, all three written together the first time an admin issues
+  /// one and never after — a receipt that changed its reference or its URL
+  /// after being sent would be worthless as proof.
+  ///
+  /// `receiptToken` is the unguessable key in the public URL. Null means no
+  /// public page exists for this transaction at all, which is the default:
+  /// only transactions someone actually needs proof of get exposed.
+  receiptToken    String?   @unique
+  /// Human-quotable reference printed on the receipt, e.g. "SET-2609-A4F291".
+  /// Stored rather than derived so support can look one up when a client
+  /// quotes it back.
+  receiptRef      String?   @unique
+  receiptIssuedAt DateTime?
+
   processedById String?
   processedBy   User?     @relation("TransactionProcessor", fields: [processedById], references: [id], onDelete: SetNull)
   processedAt   DateTime?

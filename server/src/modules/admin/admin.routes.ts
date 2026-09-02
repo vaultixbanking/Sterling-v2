@@ -29,6 +29,7 @@ import {
   sendWithdrawalPinRevokedEmail,
 } from "../../services/email/email.service.js"
 import { getProofLink, processDeposit } from "../deposits/deposits.service.js"
+import { issueReceipt } from "../receipts/receipts.service.js"
 import { issuePin, listPins, revokePin } from "../pins/pins.service.js"
 import * as plansService from "../plans/plans.service.js"
 import { processWithdrawal } from "../withdrawals/withdrawals.service.js"
@@ -770,5 +771,25 @@ adminRouter.get(
   "/deposit-methods",
   asyncHandler(async (_req, res) => {
     ok(res, { methods: Object.values(DepositMethod) })
+  })
+)
+
+/* -------------------------------------------------------------- receipts */
+
+/**
+ * Mints the shareable receipt for a transaction, or hands back the one that
+ * already exists. Idempotent on purpose — clicking twice must not produce a
+ * second reference for the same payment.
+ */
+adminRouter.post(
+  "/transactions/:id/receipt",
+  validate({ params: idParam }),
+  asyncHandler(async (req, res) => {
+    const receipt = await issueReceipt({
+      transactionId: req.params.id as string,
+      adminId: req.auth!.userId,
+      ip: clientIp(req),
+    })
+    ok(res, { receipt })
   })
 )

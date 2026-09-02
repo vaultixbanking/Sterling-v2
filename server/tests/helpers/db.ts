@@ -25,6 +25,10 @@ let counter = 0
  * `role` is returned as well as accepted: the HTTP harness signs a token from
  * this object, and a token minted without the role is a `USER` token — which
  * makes every admin request 403 for a reason that looks nothing like the cause.
+ *
+ * `fullName` is returned for the same class of reason: the receipt suite
+ * asserts on the name the document shows, and hard-coding "Test User" in the
+ * test would pass just as happily if the API returned somebody else's.
  */
 export async function createTestUser(
   overrides: { role?: Role } = {}
@@ -33,6 +37,7 @@ export async function createTestUser(
   uid: string
   email: string
   username: string
+  fullName: string
   role: Role
 }> {
   counter += 1
@@ -54,6 +59,7 @@ export async function createTestUser(
     uid: user.uid,
     email: user.email,
     username: user.username,
+    fullName: user.fullName,
     role: user.role,
   }
 }

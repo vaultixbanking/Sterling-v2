@@ -84,3 +84,13 @@ export const generalLimiter = build({
   windowMs: 60 * 1000,
   limit: 120,
 })
+
+/**
+ * Public receipt lookups. The token is 24 random bytes, so this is not what
+ * stops someone guessing one — it stops a bored script hammering the endpoint,
+ * which is the only realistic abuse of a URL that is meant to be shared.
+ */
+export const receiptLimiter = build({
+  windowMs: 60 * 1000,
+  limit: 60,
+})

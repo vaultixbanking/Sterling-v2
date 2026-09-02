@@ -503,3 +503,30 @@ export interface UsernameCheck {
   /** Free, legal alternatives — empty when the name is available. */
   suggestions: string[]
 }
+
+/**
+ * The shareable proof-of-payment document. Deliberately does NOT carry the
+ * account balance: the page is reachable by anyone holding the link, and a
+ * client forwarding proof of one payment should not be disclosing the rest of
+ * their account.
+ */
+export interface ReceiptLink {
+  reference: string
+  token: string
+  url: string
+  issuedAt: string
+  /** False when the receipt already existed and was returned unchanged. */
+  created: boolean
+}
+
+export interface PublicReceipt {
+  reference: string
+  issuedAt: string
+  direction: TxType
+  amount: string
+  category: TxCategory
+  description: string | null
+  status: TxStatus
+  date: string
+  account: { name: string; uid: string }
+}

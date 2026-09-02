@@ -8,6 +8,7 @@ import { depositsRouter } from "./modules/deposits/deposits.routes.js"
 import { holdingsRouter } from "./modules/holdings/holdings.routes.js"
 import { plansRouter, subscriptionsRouter } from "./modules/plans/plans.routes.js"
 import { portfolioRouter } from "./modules/portfolio/portfolio.routes.js"
+import { receiptsRouter } from "./modules/receipts/receipts.routes.js"
 import { transactionsRouter } from "./modules/transactions/transactions.routes.js"
 import { usersRouter } from "./modules/users/users.routes.js"
 import { withdrawalsRouter } from "./modules/withdrawals/withdrawals.routes.js"
@@ -26,6 +27,8 @@ apiRouter.get("/health", async (_req, res) => {
 // ---- public --------------------------------------------------------------
 apiRouter.use("/auth", authRouter)
 apiRouter.use("/plans", plansRouter)
+// Reachable by anyone holding the link — that is the point of a receipt.
+apiRouter.use("/receipts", receiptsRouter)
 
 // ---- authenticated -------------------------------------------------------
 apiRouter.use("/users", authenticate, usersRouter)

@@ -22,6 +22,8 @@ import type {
   PerformanceSeries,
   Plan,
   PlanInput,
+  PublicReceipt,
+  ReceiptLink,
   PortfolioSummary,
   PublicUser,
   RegisterInput,
@@ -383,6 +385,25 @@ export const admin = {
 
   auditLogs: (params: { page?: number; limit?: number } = {}) =>
     request<Paginated<AuditLogEntry>>("/admin/audit-logs", { query: params }),
+
+  /**
+   * Mints the shareable receipt for a transaction, or returns the existing
+   * one. Safe to call repeatedly — the reference never changes once issued.
+   */
+  issueReceipt: (transactionId: string) =>
+    request<{ receipt: ReceiptLink }>(
+      `/admin/transactions/${transactionId}/receipt`,
+      { method: "POST" }
+    ),
+}
+
+/**
+ * Public: no token, no session. The receipt link is meant to be forwarded to
+ * people who have no account here, which is the entire point of it.
+ */
+export const receipts = {
+  get: (token: string) =>
+    request<{ receipt: PublicReceipt }>(`/receipts/${token}`),
 }
 
 export const health = () =>

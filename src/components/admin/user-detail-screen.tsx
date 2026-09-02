@@ -7,6 +7,7 @@ import {
   KeyRound,
   MinusCircle,
   PlusCircle,
+  ReceiptText,
   ShieldOff,
   ShieldCheck,
   Trash2,
@@ -23,7 +24,12 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/toast"
 import * as api from "@/lib/api/endpoints"
-import type { HoldingSummary, IssuedPin, TxCategory } from "@/lib/api/types"
+import type {
+  HoldingSummary,
+  IssuedPin,
+  ReceiptLink,
+  TxCategory,
+} from "@/lib/api/types"
 import {
   formatDateTime,
   formatRelative,
@@ -128,6 +134,11 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
   const [notifyHolding, setNotifyHolding] = useState(false)
   const [removeBusy, setRemoveBusy] = useState(false)
 
+  const [receipt, setReceipt] = useState<ReceiptLink | null>(null)
+  /** Holds the id of the transaction whose receipt is being minted, not a bool:
+      the spinner belongs on the row that was clicked, not on all of them. */
+  const [receiptBusy, setReceiptBusy] = useState<string | null>(null)
+
   const data = detail.data
 
   function openAdjust(direction: Direction) {
@@ -143,6 +154,22 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
     // entry never carries silently into this one.
     setNotify(direction === "credit")
     setAdjustOpen(direction)
+  }
+
+  /**
+   * Idempotent on the server, so a double click cannot mint a second reference
+   * for the same payment — it returns the receipt that already exists.
+   */
+  async function openReceipt(transactionId: string) {
+    setReceiptBusy(transactionId)
+    try {
+      const result = await api.admin.issueReceipt(transactionId)
+      setReceipt(result.receipt)
+    } catch (cause) {
+      toast.fromError(cause, "Could not create the receipt.")
+    } finally {
+      setReceiptBusy(null)
+    }
   }
 
   async function submitAdjustment() {
@@ -476,6 +503,20 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
                   signed
                   className="shrink-0 text-sm font-semibold"
                 />
+                {/* Only completed movements. A receipt for something still
+                    pending would be a promise rather than a record. */}
+                {tx.status === "COMPLETED" && (
+                  <button
+                    type="button"
+                    onClick={() => void openReceipt(tx.id)}
+                    disabled={receiptBusy !== null}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-secondary-200 px-2.5 py-1.5 text-xs font-medium text-secondary-600 transition-colors hover:border-secondary-300 hover:text-secondary-900 focus-visible:ring-4 focus-visible:ring-primary-200 focus-visible:outline-none disabled:opacity-50"
+                    title="Create a shareable receipt"
+                  >
+                    <ReceiptText className="size-3.5" />
+                    {receiptBusy === tx.id ? "…" : "Receipt"}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -650,6 +691,44 @@ export function AdminUserDetailScreen({ uid }: { uid: string }) {
               For {issued.user.fullName} · expires{" "}
               {formatDateTime(issued.expiresAt)}
             </p>
+          </div>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={receipt !== null}
+        onOpenChange={(next) => !next && setReceipt(null)}
+        title="Receipt ready"
+        description="Anyone with this link can view the receipt, so share it only with the client or their representative."
+        confirmLabel="Done"
+        cancelLabel="Close"
+        onConfirm={() => setReceipt(null)}
+      >
+        {receipt && (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-secondary-200 bg-secondary-50 p-3">
+              <p className="text-xs text-secondary-500">Reference</p>
+              <p className="font-mono text-sm font-semibold text-secondary-900">
+                {receipt.reference}
+              </p>
+            </div>
+            <div className="rounded-xl border-2 border-primary-200 bg-primary-50 p-3">
+              <p className="text-xs text-secondary-600">Shareable link</p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-primary-800">
+                  {receipt.url}
+                </span>
+                <CopyButton value={receipt.url} label="Copy receipt link" />
+              </div>
+            </div>
+            <a
+              href={receipt.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block text-xs font-medium text-primary-700 underline underline-offset-2"
+            >
+              Open the receipt
+            </a>
           </div>
         )}
       </ConfirmDialog>
