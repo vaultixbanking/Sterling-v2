@@ -1,12 +1,17 @@
+import { toE164 } from "@/lib/countries"
+
 /**
  * Client-side form validation for the auth screens.
- * Deliberately dependency-free — the rules here will need to be mirrored
- * server-side once the backend exists; never treat these as authoritative.
+ *
+ * Mirrors `server/src/modules/auth/auth.schema.ts`; the server is the only
+ * authority, and everything here is UX. Phone validation is the one rule that
+ * is not hand-written — it comes from `libphonenumber-js` via `toE164`, so the
+ * client and the server reach their verdict from the same metadata rather than
+ * from two regexes that drift.
  */
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 export const USERNAME_RE = /^[a-z0-9_]{3,20}$/i
-export const PHONE_RE = /^[+]?[\d\s()-]{7,20}$/
 
 export interface PasswordScore {
   /** 0–4 */
@@ -68,6 +73,8 @@ export interface SignupValues {
   fullName: string
   email: string
   username: string
+  /** ISO 3166-1 alpha-2. */
+  country: string
   phone: string
   password: string
   confirmPassword: string
@@ -96,8 +103,19 @@ export function validateSignup(values: SignupValues): Errors<SignupValues> {
       "Use 3–20 characters: letters, numbers or underscores only."
   }
 
-  if (values.phone.trim() && !PHONE_RE.test(values.phone.trim())) {
-    errors.phone = "Enter a valid phone number."
+  if (!values.country.trim()) {
+    errors.country = "Select your country of residence."
+  }
+
+  // Required now, and checked against the selected country rather than a
+  // catch-all pattern — the old regex accepted "(((((((" and "0000000", which
+  // is worse than nothing when this is how we reach someone about their money.
+  if (!values.phone.trim()) {
+    errors.phone = "Enter your phone number."
+  } else if (!values.country.trim()) {
+    errors.phone = "Select your country first."
+  } else if (!toE164(values.phone, values.country)) {
+    errors.phone = "Enter a valid phone number for the country you selected."
   }
 
   if (!values.password) {

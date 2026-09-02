@@ -105,9 +105,17 @@ model User {
   /// Short public-facing account reference shown in the dashboard.
   uid          String     @unique
   email        String     @unique
-  username     String     @unique
+  /// Case-insensitive at the database level: `citext` makes the existing
+  /// unique constraint reject `Joshua` when `joshua` exists, which a plain
+  /// `String` cannot — Postgres compares text byte-for-byte. The application
+  /// checks this too; the column is the backstop for two simultaneous signups.
+  username     String     @unique @db.Citext
   fullName     String
+  /// E.164, e.g. "+2348031234567". Required at signup; nullable because the
+  /// accounts migrated from the old platform predate the requirement.
   phone        String?
+  /// ISO 3166-1 alpha-2 country of residence. Same nullability, same reason.
+  country      String?  @db.Char(2)
   passwordHash String
   role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)

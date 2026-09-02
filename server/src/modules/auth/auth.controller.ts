@@ -5,6 +5,7 @@ import { UnauthenticatedError } from "../../lib/errors.js"
 import { clientIp, created, noContent, ok } from "../../lib/http.js"
 import { prisma } from "../../lib/prisma.js"
 import * as authService from "./auth.service.js"
+import { checkUsername } from "./username.service.js"
 import * as tokenService from "./token.service.js"
 
 function requestContext(req: Request) {
@@ -17,6 +18,17 @@ function requestContext(req: Request) {
 export async function register(req: Request, res: Response): Promise<void> {
   const user = await authService.register(req.body)
   created(res, { user })
+}
+
+/**
+ * Advisory only. `register` re-checks and still returns a 409, because someone
+ * can take the name between this answer and the submit.
+ */
+export async function checkUsernameAvailability(
+  req: Request,
+  res: Response
+): Promise<void> {
+  ok(res, await checkUsername(req.body.username, req.body.fullName))
 }
 
 export async function login(req: Request, res: Response): Promise<void> {

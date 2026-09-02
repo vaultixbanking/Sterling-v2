@@ -35,6 +35,22 @@ export const authLimiter = build({
 })
 
 /**
+ * Live username availability, called on a debounced keystroke while someone
+ * fills in the signup form.
+ *
+ * The ceiling is high because a person choosing a name legitimately makes
+ * dozens of these, and a shared office or mobile-carrier IP multiplies that
+ * across everyone behind it. It exists at all because the endpoint is
+ * unauthenticated and answers "does this account exist?" — a cap is what keeps
+ * a convenience from being a bulk directory scrape. It is deliberately far
+ * below what enumerating a real wordlist would need.
+ */
+export const usernameCheckLimiter = build({
+  windowMs: 60 * 1000,
+  limit: 30,
+})
+
+/**
  * Token refresh, which every page load performs once. Ten per quarter-hour —
  * the sign-in ceiling — locks a normal user out of their own dashboard after a
  * few reloads. The ceiling here is high because the endpoint is not a guessing

@@ -28,6 +28,7 @@ import {
   sendWelcomeEmail,
 } from "../../services/email/email.service.js"
 import { revokeAllSessions } from "./token.service.js"
+import { isReserved } from "./username.service.js"
 import type {
   ChangePasswordInput,
   LoginInput,
@@ -40,7 +41,10 @@ export interface PublicUser {
   email: string
   username: string
   fullName: string
+  /** E.164. Null only for accounts that predate the requirement. */
   phone: string | null
+  /** ISO 3166-1 alpha-2. Same. */
+  country: string | null
   role: User["role"]
   status: UserStatus
   createdAt: Date
@@ -55,6 +59,7 @@ export function toPublicUser(user: User): PublicUser {
     username: user.username,
     fullName: user.fullName,
     phone: user.phone,
+    country: user.country,
     role: user.role,
     status: user.status,
     createdAt: user.createdAt,
@@ -76,13 +81,23 @@ async function allocateUid(): Promise<string> {
 }
 
 export async function register(input: RegisterInput): Promise<PublicUser> {
+  // These three rules are the ones `checkUsername` reports on. They must stay
+  // identical: a name the signup form calls free and then refuses on submit is
+  // worse than no live check at all.
+  if (isReserved(input.username)) {
+    throw new ConflictError("That username is reserved. Please choose another.")
+  }
+
   const [emailTaken, usernameTaken] = await Promise.all([
     prisma.user.findUnique({
       where: { email: input.email },
       select: { id: true },
     }),
-    prisma.user.findUnique({
-      where: { username: input.username },
+    // Case-insensitive: the unique index is byte-for-byte, so without this
+    // `Joshua` and `joshua` are two accounts that look like one in every list
+    // they appear in — and `login` now treats them as the same handle.
+    prisma.user.findFirst({
+      where: { username: { equals: input.username, mode: "insensitive" } },
       select: { id: true },
     }),
   ])
@@ -100,7 +115,11 @@ export async function register(input: RegisterInput): Promise<PublicUser> {
       email: input.email,
       username: input.username,
       fullName: input.fullName,
-      phone: input.phone?.trim() ? input.phone.trim() : null,
+      // Already normalised to E.164 and validated against the country by
+      // `registerSchema` — this cannot be reached with a number that does not
+      // parse, so there is nothing left to defend against here.
+      phone: input.phone,
+      country: input.country,
       passwordHash: await hashPassword(input.password),
     },
   })
@@ -201,11 +220,20 @@ export async function verifyEmail(token: string): Promise<PublicUser> {
 export async function login(
   input: LoginInput
 ): Promise<User> {
-  const identifier = input.identifier.toLowerCase()
+  // Trimmed because mobile keyboards and password managers append a space, and
+  // "your password is wrong" is a miserable answer to an invisible character.
+  const identifier = input.identifier.trim()
 
   const user = await prisma.user.findFirst({
     where: {
-      OR: [{ email: identifier }, { username: input.identifier }],
+      OR: [
+        { email: identifier.toLowerCase() },
+        // Case-insensitive, matching how the address is handled a line above.
+        // Only the email was folded, so anyone who registered `Joshua_O` could
+        // sign in with their email but never with their own username typed in
+        // lower case — and got the same "invalid credentials" as an attacker.
+        { username: { equals: identifier, mode: "insensitive" } },
+      ],
     },
   })
 
