@@ -190,6 +190,29 @@ export async function cancelSubscription(
   }
 
   await prisma.$transaction(async (tx) => {
+    /*
+     * Cancel first, refund second — and cancel conditionally.
+     *
+     * The ACTIVE check above happens outside this transaction, so two taps on
+     * Cancel both passed it and both reached `credit()`, which creates a new
+     * row per call. The principal came back twice. This one was reachable by
+     * any user with a double-tap, not just an admin.
+     *
+     * Ordering matters as much as the condition: claiming the subscription
+     * before crediting means the caller who loses the race has already failed
+     * by the time any money would move. Same compare-and-swap as `settle` and
+     * `unwind`; `accrueDailyReturns` below guards itself the same way via
+     * `lastAccruedOn`.
+     */
+    const claimed = await tx.subscription.updateMany({
+      where: { id: subscription.id, status: SubscriptionStatus.ACTIVE },
+      data: { status: SubscriptionStatus.CANCELLED },
+    })
+
+    if (claimed.count !== 1) {
+      throw new ValidationError("That subscription is no longer active.")
+    }
+
     // Early exit returns the principal; accrued payouts already credited stay.
     await credit(
       {
@@ -201,11 +224,6 @@ export async function cancelSubscription(
       },
       tx
     )
-
-    await tx.subscription.update({
-      where: { id: subscription.id },
-      data: { status: SubscriptionStatus.CANCELLED },
-    })
   })
 
   void notifySubscriber(userId, async (user) => {

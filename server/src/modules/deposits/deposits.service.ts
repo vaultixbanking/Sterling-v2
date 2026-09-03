@@ -126,7 +126,34 @@ export async function processDeposit(params: {
   const approving = params.action === "approve"
 
   await prisma.$transaction(async (tx) => {
-    let transactionId: string | null = null
+    /*
+     * Claim the request before moving any money.
+     *
+     * The PENDING check above runs outside this transaction and cannot, on its
+     * own, stop anything: two approvals arriving together both read PENDING,
+     * both pass it, and both reach `credit()` — which creates a *new* row every
+     * call rather than updating one. The result was a deposit credited twice
+     * from a double-clicked Approve button.
+     *
+     * This conditional update is what actually decides. Postgres makes the
+     * second caller wait on the row lock, and re-evaluates the `status`
+     * predicate once the first commits, so exactly one claim can match. It is
+     * the same compare-and-swap `settle`, `unwind` and `consumePin` already
+     * use — the deposit path simply never adopted it.
+     */
+    const claimed = await tx.depositRequest.updateMany({
+      where: { id: request.id, status: RequestStatus.PENDING },
+      data: {
+        status: approving ? RequestStatus.APPROVED : RequestStatus.REJECTED,
+        reviewedById: params.adminId,
+        reviewedAt: new Date(),
+        reviewNote: params.note ?? null,
+      },
+    })
+
+    if (claimed.count !== 1) {
+      throw new ValidationError("That deposit has already been processed.")
+    }
 
     if (approving) {
       const transaction = await credit(
@@ -144,19 +171,12 @@ export async function processDeposit(params: {
         },
         tx
       )
-      transactionId = transaction.id
-    }
 
-    await tx.depositRequest.update({
-      where: { id: request.id },
-      data: {
-        status: approving ? RequestStatus.APPROVED : RequestStatus.REJECTED,
-        reviewedById: params.adminId,
-        reviewedAt: new Date(),
-        reviewNote: params.note ?? null,
-        ...(transactionId ? { transactionId } : {}),
-      },
-    })
+      await tx.depositRequest.update({
+        where: { id: request.id },
+        data: { transactionId: transaction.id },
+      })
+    }
   })
 
   await recordAudit({
