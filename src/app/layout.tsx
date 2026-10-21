@@ -3,6 +3,7 @@ import { Inter, Sora, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 
 import { Providers } from "@/components/providers"
+import { SmartsuppChat } from "@/components/site/smartsupp-chat"
 import { baseOpenGraph, shareImage } from "@/lib/seo"
 import { company } from "@/lib/site"
 
@@ -85,6 +86,7 @@ export default function RootLayout({
     >
       <body className="min-h-screen bg-white font-sans antialiased">
         <Providers>{children}</Providers>
+        <SmartsuppChat />
       </body>
     </html>
   )
